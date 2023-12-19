@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include "drake/common/drake_copyable.h"
@@ -17,17 +18,16 @@ class RejectionSampler final : public PointSamplerBase {
    * interface. Instances of this class draw points according to the passed
    * sampler, but reject points which return true when passed to rejection_fun.
    */
-  RejectionSampler(
-      const std::shared_ptr<PointSamplerBase>& sampler,
-      const std::function<bool(const Eigen::Ref<const Eigen::VectorXd>&)>&
-          rejection_fun);
+  RejectionSampler(std::shared_ptr<PointSamplerBase> sampler,
+                   std::function<bool(const Eigen::Ref<const Eigen::VectorXd>&)>
+                       rejection_fun);
 
  private:
   Eigen::MatrixXd DoSamplePoints(int num_points) override;
 
   std::shared_ptr<PointSamplerBase> sampler_;
 
-  const std::function<bool(const Eigen::Ref<const Eigen::VectorXd>&)>&
+  const std::function<bool(const Eigen::Ref<const Eigen::VectorXd>&)>
       rejection_fun_;
 };
 
