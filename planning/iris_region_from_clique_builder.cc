@@ -43,5 +43,27 @@ std::unique_ptr<ConvexSet> IrisRegionFromCliqueBuilder::DoBuildConvexSet(
       .Clone();
 }
 
+IrisInConfigurationSpaceRegionFromCliqueBuilder::
+    IrisInConfigurationSpaceRegionFromCliqueBuilder(
+        const multibody::MultibodyPlant<double>& plant,
+        const systems::Context<double>& context, const IrisOptions& options,
+        const double rank_tol_for_lowner_john_ellipse)
+    : plant_(plant),
+      context_(context),
+      options_(options),
+      rank_tol_for_lowner_john_ellipse_(rank_tol_for_lowner_john_ellipse) {}
+
+std::unique_ptr<ConvexSet>
+IrisInConfigurationSpaceRegionFromCliqueBuilder::DoBuildConvexSet(
+    const Eigen::Ref<const Eigen::MatrixXd>& clique_points) {
+  const Hyperellipsoid starting_ellipse =
+      Hyperellipsoid::MinimumVolumeCircumscribedEllipsoid(
+          clique_points, rank_tol_for_lowner_john_ellipse_);
+  options_.starting_ellipse = starting_ellipse;
+  return std::move(geometry::optimization::IrisInConfigurationSpace(
+                       plant_, context_, options_))
+      .Clone();
+}
+
 }  // namespace planning
 }  // namespace drake

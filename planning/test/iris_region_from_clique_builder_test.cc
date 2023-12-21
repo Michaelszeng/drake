@@ -2,9 +2,13 @@
 
 #include <gtest/gtest.h>
 
+#include "drake/common/find_resource.h"
 #include "drake/common/ssize.h"
 #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
+#include "drake/geometry/optimization/vpolytope.h"
+#include "drake/multibody/parsing/parser.h"
+#include "drake/systems/framework/diagram_builder.h"
 
 namespace drake {
 namespace planning {
@@ -13,6 +17,7 @@ using Eigen::Vector2d;
 using geometry::optimization::ConvexSets;
 using geometry::optimization::HPolyhedron;
 using geometry::optimization::IrisOptions;
+using geometry::optimization::VPolytope;
 
 GTEST_TEST(IrisRegionFromCliqueBuilder, TestCtorSettersAndGetters) {
   const HPolyhedron domain =
@@ -129,6 +134,149 @@ GTEST_TEST(IrisRegionFromCliqueBuilder, TestBuildConvexSet) {
   for (int i = 0; i < test_points2.cols(); ++i) {
     EXPECT_TRUE(set2->PointInSet(test_points2.col(i), 1e-6));
   }
+}
+
+const char boxes_in_2d_urdf[] = R"""(
+<robot name="boxes">
+  <link name="fixed">
+    <collision name="right">
+      <origin rpy="0 0 0" xyz="2 0 0"/>
+      <geometry><box size="1 1 1"/></geometry>
+    </collision>
+    <collision name="left">
+      <origin rpy="0 0 0" xyz="-2 0 0"/>
+      <geometry><box size="1 1 1"/></geometry>
+    </collision>
+  </link>
+  <joint name="fixed_link_weld" type="fixed">
+    <parent link="world"/>
+    <child link="fixed"/>
+  </joint>
+  <link name="movable">
+    <collision name="center">
+      <geometry><box size="1 1 1"/></geometry>
+    </collision>
+  </link>
+  <link name="for_joint"/>
+  <joint name="x" type="prismatic">
+    <axis xyz="1 0 0"/>
+    <limit lower="-2" upper="2"/>
+    <parent link="world"/>
+    <child link="for_joint"/>
+  </joint>
+  <joint name="y" type="prismatic">
+    <axis xyz="0 1 0"/>
+    <limit lower="-1" upper="1"/>
+    <parent link="for_joint"/>
+    <child link="movable"/>
+  </joint>
+</robot>
+)""";
+
+GTEST_TEST(IrisInConfigurationSpaceRegionFromCliqueBuilder,
+           TestCtorSettersAndGetters) {
+  systems::DiagramBuilder<double> builder;
+  multibody::MultibodyPlant<double>& plant =
+      multibody::AddMultibodyPlantSceneGraph(&builder, 0.0);
+  multibody::Parser parser(&plant);
+  parser.package_map().AddPackageXml(FindResourceOrThrow(
+      "drake/multibody/parsing/test/box_package/package.xml"));
+  parser.AddModelsFromString(boxes_in_2d_urdf, "urdf");
+  plant.Finalize();
+  auto diagram = builder.Build();
+
+  auto context = diagram->CreateDefaultContext();
+
+  IrisOptions options{};
+  IrisInConfigurationSpaceRegionFromCliqueBuilder region_builder(
+      plant, *context, options, 1e-6);
+
+  const double rank_tol_for_lowner_john_ellipse2 = 1e-10;
+  region_builder.set_rank_tol_for_lowner_john_ellipse(
+      rank_tol_for_lowner_john_ellipse2);
+  EXPECT_EQ(rank_tol_for_lowner_john_ellipse2,
+            region_builder.get_rank_tol_for_lowner_john_ellipse());
+
+  IrisOptions options2{};
+  options2.iteration_limit = 4;
+  region_builder.set_options(options2);
+  EXPECT_EQ(options2.iteration_limit,
+            region_builder.get_options().iteration_limit);
+}
+
+/* Box obstacles in one corner.
+┌───────┬─────┐
+│       │     │
+│       │     │
+│       └─────┤
+│      *      │
+│             │
+│             │
+│             │
+└─────────────┘
+We use only a single configuration obstacle, and verify the the computed
+halfspace changes.
+*/
+GTEST_TEST(IrisInConfigurationSpaceRegionFromCliqueBuilder,
+           TestBuildConvexSet) {
+  systems::DiagramBuilder<double> builder;
+  multibody::MultibodyPlant<double>& plant =
+      multibody::AddMultibodyPlantSceneGraph(&builder, 0.0);
+  multibody::Parser parser(&plant);
+  parser.package_map().AddPackageXml(FindResourceOrThrow(
+      "drake/multibody/parsing/test/box_package/package.xml"));
+  parser.AddModelsFromString(boxes_in_2d_urdf, "urdf");
+  plant.Finalize();
+  auto diagram = builder.Build();
+
+  auto context = diagram->CreateDefaultContext();
+
+  IrisOptions options{};
+  ConvexSets obstacles;
+  obstacles.emplace_back(VPolytope::MakeBox(Vector2d(.2, .2), Vector2d(1, 1)));
+  options.configuration_obstacles = obstacles;
+
+  IrisInConfigurationSpaceRegionFromCliqueBuilder region_builder(
+      plant, *context, options, 1e-6);
+
+  // A clique spread along the y direction.
+  const Eigen::Matrix<double, 2, 4> clique1{{0.75, 0.75, 0.125, 0.125},
+                                            {0.15, 0.85, 0.15, 0.85}};
+  // The convex hull of these points is approximately the long side of the box.
+  const Eigen::Matrix<double, 2, 4> test_points1{{0.05, 0.05, 0.19, 0.19},
+                                                 {0.1, 0.9, 0.1, 0.9}};
+  // A clique spread along the x direction.
+  const Eigen::Matrix<double, 2, 4> clique2{{0.1, 0.1, 0.9, 0.9},
+                                            {0.1, 0.2, 0.1, 0.2}};
+  const Eigen::Matrix<double, 2, 4> test_points2{{0.05, 0.05, 0.96, 0.96},
+                                                 {0.1, 0.3, 0.1, 0.3}};
+
+  std::unique_ptr<ConvexSet> set1_base = region_builder.BuildConvexSet(clique1);
+  const HPolyhedron* set1 = dynamic_cast<const HPolyhedron*>(set1_base.get());
+  for (int i = 0; i < test_points1.cols(); ++i) {
+    EXPECT_TRUE(set1->PointInSet(test_points1.col(i), 1e-6));
+  }
+  bool test_points2_not_covered_by_set1 = false;
+  for (int i = 0; i < test_points2.cols(); ++i) {
+    if(!set1->PointInSet(test_points2.col(i), 1e-6)) {
+        test_points2_not_covered_by_set1 = true;
+    }
+  }
+  EXPECT_TRUE(test_points2_not_covered_by_set1);
+
+
+  std::unique_ptr<ConvexSet> set2_base = region_builder.BuildConvexSet(clique2);
+  const HPolyhedron* set2 = dynamic_cast<const HPolyhedron*>(set2_base.get());
+  for (int i = 0; i < test_points2.cols(); ++i) {
+    EXPECT_TRUE(set2->PointInSet(test_points2.col(i), 1e-6));
+  }
+  bool test_points1_not_covered_by_set2 = false;
+  for (int i = 0; i < test_points1.cols(); ++i) {
+    if(!set2->PointInSet(test_points1.col(i), 1e-6)) {
+        test_points1_not_covered_by_set2 = true;
+    }
+  }
+  EXPECT_TRUE(test_points1_not_covered_by_set2);
 }
 
 }  // namespace
