@@ -80,7 +80,7 @@ struct IrisFromCliqueCoverOptions {
 
 void IrisFromCliqueCover(const ConvexSets& obstacles, const HPolyhedron& domain,
                          const IrisFromCliqueCoverOptions& options,
-                         std::vector<copyable_unique_ptr<HPolyhedron>>* sets);
+                         std::vector<HPolyhedron>* sets);
 
 }  // namespace planning
 }  // namespace drake

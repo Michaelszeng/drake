@@ -40,8 +40,8 @@ GTEST_TEST(BernoulliCoverageCheck, TestCtorSettersAndGetters) {
   const double point_in_set_tol = 1e-10;
   const Hyperrectangle domain{Vector2d{0, 0}, Vector2d{1, 1}};
   RandomGenerator generator(0);
-  std::unique_ptr<PointSamplerBase> sampler =
-      std::make_unique<UniformSetSampler<Hyperrectangle>>(domain, generator);
+  std::shared_ptr<PointSamplerBase> sampler =
+      std::make_shared<UniformSetSampler<Hyperrectangle>>(domain, generator);
   CoverageCheckerViaBernoulliTest checker{alpha, num_points_per_check,
                                           std::move(sampler), num_threads,
                                           point_in_set_tol};
@@ -71,8 +71,8 @@ GTEST_TEST(BernoulliCoverageCheck, TestCtorSettersAndGetters) {
   checker.set_alpha(10);
   EXPECT_EQ(checker.get_alpha(), 1);
 
-  std::unique_ptr<PointSamplerBase> sampler2 =
-      std::make_unique<UniformSetSampler<Hyperrectangle>>(domain, generator);
+  std::shared_ptr<PointSamplerBase> sampler2 =
+      std::make_shared<UniformSetSampler<Hyperrectangle>>(domain, generator);
   CoverageCheckerViaBernoulliTest checker_default{alpha, num_points_per_check,
                                                   std::move(sampler2)};
   // Check that the default number of threads is -1
@@ -92,8 +92,8 @@ GTEST_TEST(BernoulliCoverageCheck, BoxDomainCoveredByBoxesSuccess) {
   const double point_in_set_tol = 1e-10;
   const Hyperrectangle domain{Vector2d{0, 0}, Vector2d{1, 1}};
   RandomGenerator generator(0);
-  std::unique_ptr<PointSamplerBase> sampler =
-      std::make_unique<UniformSetSampler<Hyperrectangle>>(domain, generator);
+  std::shared_ptr<PointSamplerBase> sampler =
+      std::make_shared<UniformSetSampler<Hyperrectangle>>(domain, generator);
   CoverageCheckerViaBernoulliTest checker{alpha, num_points_per_check,
                                           std::move(sampler), num_threads,
                                           point_in_set_tol};
@@ -129,8 +129,8 @@ GTEST_TEST(BernoulliCoverageCheck, BoxDomainCoveredByBoxesFails) {
   const Hyperrectangle domain{Vector2d{0, 0}, Vector2d{1, 1}};
   const double point_in_set_tol = 1e-10;
   RandomGenerator generator(0);
-  std::unique_ptr<PointSamplerBase> sampler =
-      std::make_unique<UniformSetSampler<Hyperrectangle>>(domain, generator);
+  std::shared_ptr<PointSamplerBase> sampler =
+      std::make_shared<UniformSetSampler<Hyperrectangle>>(domain, generator);
   CoverageCheckerViaBernoulliTest checker{alpha, num_points_per_check,
                                           std::move(sampler), num_threads,
                                           point_in_set_tol};
@@ -159,8 +159,8 @@ GTEST_TEST(BernoulliCoverageCheck, BoxDomainCoveredByHPolyhedron) {
   const Hyperrectangle domain{Vector2d{0, 0}, Vector2d{1, 1}};
   const double point_in_set_tol = 1e-10;
   RandomGenerator generator(0);
-  std::unique_ptr<PointSamplerBase> sampler =
-      std::make_unique<UniformSetSampler<Hyperrectangle>>(domain, generator);
+  std::shared_ptr<PointSamplerBase> sampler =
+      std::make_shared<UniformSetSampler<Hyperrectangle>>(domain, generator);
 
   CoverageCheckerViaBernoulliTest checker{alpha, num_points_per_check,
                                           std::move(sampler), num_threads,
@@ -193,7 +193,7 @@ GTEST_TEST(BernoulliCoverageCheck, BoxDomainCoveredByHPolyhedron) {
  */
 GTEST_TEST(BernoulliCoverageCheck, BoxDomainCoveredByMix) {
   const double alpha{0.9};
-  const int num_points_per_check{static_cast<int>(10)};
+  const int num_points_per_check{10};
   const int num_threads = 3;
   const Hyperrectangle domain{Vector2d{0, 0}, Vector2d{1, 1}};
   const double point_in_set_tol = 1e-10;
@@ -207,9 +207,9 @@ GTEST_TEST(BernoulliCoverageCheck, BoxDomainCoveredByMix) {
 
   ConvexSets current_sets;
   // An HPolyhedron comprising the lower left diagonal of the 1x1 box.
-  //  const Eigen::Matrix<double, 3, 2> A{{-1, 0}, {0, -1}, {1, 1}};
-  //  const Eigen::Vector3d b{0, 0, 1};
-  //  current_sets.emplace_back(std::make_unique<HPolyhedron>(A, b));
+  const Eigen::Matrix<double, 3, 2> A{{-1, 0}, {0, -1}, {1, 1}};
+  const Eigen::Vector3d b{0, 0, 1};
+  current_sets.emplace_back(std::make_unique<HPolyhedron>(A, b));
   // A VPolytope covering the entire 1x1 box.
   const Eigen::Matrix<double, 2, 4> vertices{{0, 0, 1, 1}, {0, 1, 0, 1}};
   current_sets.emplace_back(std::make_unique<VPolytope>(vertices));

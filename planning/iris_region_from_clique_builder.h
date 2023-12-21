@@ -67,7 +67,7 @@ class IrisRegionFromCliqueBuilder final
   }
 
  private:
-  copyable_unique_ptr<ConvexSet> DoBuildConvexSet(
+  std::unique_ptr<ConvexSet> DoBuildConvexSet(
       const Eigen::Ref<const Eigen::MatrixXd>& clique_points) override;
 
   ConvexSets obstacles_;

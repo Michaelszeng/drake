@@ -72,7 +72,7 @@ class ConvexObstaclesVisibilityMaker final : public AdjacencyMatrixBuilderBase {
 
 void IrisFromCliqueCover(const ConvexSets& obstacles, const HPolyhedron& domain,
                          const IrisFromCliqueCoverOptions& options,
-                         std::vector<copyable_unique_ptr<HPolyhedron>>* sets) {
+                         std::vector<HPolyhedron>* sets) {
   // Convert the concrete HPolyhedrons to ConvexSets
   ConvexSets abstract_sets;
   abstract_sets.reserve(sets->size());
@@ -167,7 +167,7 @@ void IrisFromCliqueCover(const ConvexSets& obstacles, const HPolyhedron& domain,
   for (auto& abstract_set : abstract_sets) {
     std::unique_ptr<HPolyhedron> set{
         dynamic_cast<HPolyhedron*>(abstract_set.release())};
-    sets->emplace_back(std::move(set));
+    sets->emplace_back(set->A(), set->b());
   }
 }
 

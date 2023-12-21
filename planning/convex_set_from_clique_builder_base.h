@@ -20,7 +20,7 @@ class ConvexSetFromCliqueBuilderBase {
   /**
    * Given a set of points, build a convex set.
    */
-  copyable_unique_ptr<ConvexSet> BuildConvexSet(
+  std::unique_ptr<ConvexSet> BuildConvexSet(
       const Eigen::Ref<const Eigen::MatrixXd>& clique_points);
 
   virtual ~ConvexSetFromCliqueBuilderBase() {}
@@ -31,7 +31,7 @@ class ConvexSetFromCliqueBuilderBase {
   // functions.
   DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(ConvexSetFromCliqueBuilderBase);
 
-  virtual copyable_unique_ptr<ConvexSet> DoBuildConvexSet(
+  virtual std::unique_ptr<ConvexSet> DoBuildConvexSet(
       const Eigen::Ref<const Eigen::MatrixXd>& clique_points) = 0;
 };
 

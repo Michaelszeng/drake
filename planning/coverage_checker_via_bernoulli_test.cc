@@ -12,7 +12,7 @@ using geometry::optimization::ConvexSets;
 
 CoverageCheckerViaBernoulliTest::CoverageCheckerViaBernoulliTest(
     const double alpha, const int num_points_per_check,
-    std::unique_ptr<PointSamplerBase> point_sampler, const int num_threads,
+    std::shared_ptr<PointSamplerBase> point_sampler, const int num_threads,
     const double point_in_set_tol)
     : alpha_(alpha),
       num_points_per_check_(num_points_per_check),

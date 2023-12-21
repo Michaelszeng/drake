@@ -7,16 +7,16 @@
 namespace drake {
 namespace planning {
 
-class VisibilityGraphBuilder final : AdjacencyMatrixBuilderBase {
+class VisibilityGraphBuilder final : public AdjacencyMatrixBuilderBase {
  public:
-  VisibilityGraphBuilder(std::unique_ptr<CollisionChecker> checker,
+  VisibilityGraphBuilder(std::shared_ptr<CollisionChecker> checker,
                          bool parallelize = true);
 
  private:
   Eigen::SparseMatrix<bool> DoBuildAdjacencyMatrix(
       const Eigen::Ref<const Eigen::MatrixXd>& points) const override;
 
-  std::unique_ptr<CollisionChecker> checker_;
+  std::shared_ptr<CollisionChecker> checker_;
   bool parallelize_;
 };
 

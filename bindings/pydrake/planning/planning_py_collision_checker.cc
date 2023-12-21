@@ -23,7 +23,7 @@ void DefinePlanningCollisionChecker(py::module m) {
   {
     using Class = CollisionChecker;
     constexpr auto& cls_doc = doc.CollisionChecker;
-    py::class_<Class> cls(m, "CollisionChecker", cls_doc.doc);
+    py::class_<Class, std::shared_ptr<Class>> cls(m, "CollisionChecker", cls_doc.doc);
     cls  // BR
         .def("model", &Class::model, py_rvp::reference_internal,
             cls_doc.model.doc)
@@ -276,7 +276,7 @@ void DefinePlanningCollisionChecker(py::module m) {
   {
     using Class = SceneGraphCollisionChecker;
     constexpr auto& cls_doc = doc.SceneGraphCollisionChecker;
-    py::class_<Class, CollisionChecker> cls(
+    py::class_<Class, CollisionChecker, std::shared_ptr<Class>> cls(
         m, "SceneGraphCollisionChecker", cls_doc.doc);
     // TODO(jwnimmer-tri) Bind the __init__(params=...) constructor here once
     // we've solved the unique_ptr vs shared_ptr binding lifetime issue.
@@ -308,7 +308,7 @@ void DefinePlanningCollisionChecker(py::module m) {
   {
     using Class = UnimplementedCollisionChecker;
     constexpr auto& cls_doc = doc.UnimplementedCollisionChecker;
-    py::class_<Class, CollisionChecker> cls(
+    py::class_<Class, CollisionChecker, std::shared_ptr<Class>> cls(
         m, "UnimplementedCollisionChecker", cls_doc.doc);
     // TODO(jwnimmer-tri) Bind the __init__(params=...) constructor here once
     // we've solved the unique_ptr vs shared_ptr binding lifetime issue.

@@ -19,8 +19,13 @@ void DefinePlanningGraphAlgorithms(py::module m) {
       // Python implementations to override it.
       VectorX<bool> DoSolveMaxClique(
           const Eigen::SparseMatrix<bool>& adjacency_matrix) const override {
-        PYBIND11_OVERRIDE_PURE(VectorX<bool>, MaxCliqueSolverBase,
-            DoSolveMaxClique, adjacency_matrix);
+                py::gil_scoped_release release;
+        {
+          /* Acquire GIL before calling Python code */
+          py::gil_scoped_acquire acquire;
+          PYBIND11_OVERRIDE_PURE(VectorX < bool >, MaxCliqueSolverBase,
+                                 DoSolveMaxClique, adjacency_matrix);
+        }
       }
     };
     const auto& cls_doc = doc.MaxCliqueSolverBase;

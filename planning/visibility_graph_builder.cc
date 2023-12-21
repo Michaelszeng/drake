@@ -8,7 +8,7 @@ namespace drake {
 namespace planning {
 
 VisibilityGraphBuilder::VisibilityGraphBuilder(
-    std::unique_ptr<CollisionChecker> checker, bool parallelize)
+    std::shared_ptr<CollisionChecker> checker, bool parallelize)
     : checker_{std::move(checker)}, parallelize_{parallelize} {}
 
 Eigen::SparseMatrix<bool> VisibilityGraphBuilder::DoBuildAdjacencyMatrix(

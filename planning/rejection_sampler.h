@@ -12,7 +12,7 @@ namespace planning {
 
 class RejectionSampler final : public PointSamplerBase {
  public:
-  //  DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(RejectionSampler);
+  //    DRAKE_DEFAULT_COPY_AND_MOVE_AND_ASSIGN(RejectionSampler);
   /**
    * This class provides a concrete implementation of the PointSamplerBase
    * interface. Instances of this class draw points according to the passed

@@ -19,7 +19,13 @@ using geometry::optimization::ConvexSets;
 using graph_algorithms::MaxCliqueSolverBase;
 
 struct ApproximateConvexCoverFromCliqueCoverOptions {
+  /**
+   * The number of points to sample per round of clique cover.
+   */
   int num_sampled_points{100};
+  /**
+   * The termination threshold for greedy clique cover.
+   */
   int minimum_clique_size{3};
 };
 

@@ -124,6 +124,7 @@ void ComputeGreedyTruncatedCliqueCover(
     SparseMatrix<bool>* adjacency_matrix,
     AsyncQueue<VectorX<bool>>* computed_cliques) {
   float last_clique_size = std::numeric_limits<float>::infinity();
+  int num_cliques = 0;
   while (last_clique_size > minimum_clique_size &&
          adjacency_matrix->nonZeros() > minimum_clique_size) {
     const VectorX<bool> max_clique =
@@ -131,6 +132,7 @@ void ComputeGreedyTruncatedCliqueCover(
     last_clique_size = max_clique.template cast<int>().sum();
     if (last_clique_size > minimum_clique_size) {
       computed_cliques->push(max_clique);
+      ++num_cliques;
       MakeFalseRowsAndColumns(max_clique, adjacency_matrix);
     }
   }
@@ -146,7 +148,7 @@ std::queue<copyable_unique_ptr<ConvexSet>> SetBuilderWorker(
     const Eigen::Ref<const Eigen::MatrixXd>& points,
     ConvexSetFromCliqueBuilderBase* set_builder,
     AsyncQueue<VectorX<bool>>* computed_cliques) {
-  std::queue<copyable_unique_ptr<ConvexSet>> ret;
+  std::queue<copyable_unique_ptr<ConvexSet>> ret{};
   VectorX<bool> current_clique;
   while (computed_cliques->pop(current_clique)) {
     const int clique_size = current_clique.template cast<int>().sum();
@@ -158,7 +160,7 @@ std::queue<copyable_unique_ptr<ConvexSet>> SetBuilderWorker(
         ++clique_col;
       }
     }
-    ret.push(set_builder->BuildConvexSet(clique_points));
+    ret.emplace(set_builder->BuildConvexSet(clique_points));
   }
   return ret;
 }
@@ -225,7 +227,6 @@ void ApproximateConvexCoverFromCliqueCover(
           std::async(std::launch::async, SetBuilderWorker, points,
                      set_builders.at(i).get(), &computed_cliques));
     }
-
     // The clique cover and the convex sets are computed asynchronously. Wait
     // for all the threads to join and then add the new sets to built sets.
     clique_cover_thread.join();

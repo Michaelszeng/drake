@@ -27,7 +27,7 @@ class CoverageCheckerViaBernoulliTest final : public CoverageCheckerBase {
    */
   CoverageCheckerViaBernoulliTest(
       const double alpha, const int num_points_per_check,
-      std::unique_ptr<PointSamplerBase> point_sampler,
+      std::shared_ptr<PointSamplerBase> point_sampler,
       const int num_threads = -1, const double point_in_set_tol = 1e-8);
 
   double get_alpha() const { return alpha_; }
@@ -68,7 +68,7 @@ class CoverageCheckerViaBernoulliTest final : public CoverageCheckerBase {
 
   double alpha_;
   int num_points_per_check_;
-  const std::unique_ptr<PointSamplerBase> point_sampler_;
+  const std::shared_ptr<PointSamplerBase> point_sampler_;
   int num_threads_;
   double point_in_set_tol_;
 };
