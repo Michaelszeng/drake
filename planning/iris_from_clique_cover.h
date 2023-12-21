@@ -7,6 +7,7 @@
 #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/iris.h"
+#include "drake/planning/collision_checker.h"
 #include "drake/planning/graph_algorithms/max_clique_solver_base.h"
 #include "drake/planning/graph_algorithms/max_clique_solver_via_mip.h"
 #include "drake/planning/iris_region_from_clique_builder.h"
@@ -78,9 +79,31 @@ struct IrisFromCliqueCoverOptions {
   RandomGenerator generator{};
 };
 
+/**
+ * Cover the configuration space in IRIS regions using the Visibility Clique
+ * Cover Algorithm.
+ * @param obstacles see @Iris
+ * @param domain see @Iris
+ * @param sets [in/out] initial sets covering the space (potentially empty). The
+ * cover is written into this vector.
+ */
 void IrisFromCliqueCover(const ConvexSets& obstacles, const HPolyhedron& domain,
                          const IrisFromCliqueCoverOptions& options,
                          std::vector<HPolyhedron>* sets);
+
+/**
+ * Cover the configuration space in IRIS regions using the Visibility Clique
+ * Cover Algorithm.
+ * @param plant see @IrisInConfigurationSpace
+ * @param context see @IrisInConfigurationSpace
+ * @param checker see @VisibilityGraph.
+ * @param sets [in/out] initial sets covering the space (potentially empty). The
+ * cover is written into this vector.
+ */
+void IrisInConfigurationSpaceFromCliqueCover(
+    const multibody::MultibodyPlant<double>& plant,
+    const systems::Context<double>& context, const CollisionChecker& checker,
+    const IrisFromCliqueCoverOptions& options, std::vector<HPolyhedron>* sets);
 
 }  // namespace planning
 }  // namespace drake

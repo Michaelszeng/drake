@@ -86,7 +86,8 @@ void IrisFromCliqueCover(const ConvexSets& obstacles, const HPolyhedron& domain,
   std::shared_ptr<PointSamplerBase> sampler =
       options.point_sampler.has_value()
           ? options.point_sampler.value()
-          : std::make_shared<UniformSetSampler<HPolyhedron>>(domain);
+          : std::make_shared<UniformSetSampler<HPolyhedron>>(domain,
+                                                             options.generator);
 
   // Define the coverage checker.
   const std::function<bool(const Eigen::Ref<const Eigen::VectorXd>&)>&
@@ -169,6 +170,44 @@ void IrisFromCliqueCover(const ConvexSets& obstacles, const HPolyhedron& domain,
         dynamic_cast<HPolyhedron*>(abstract_set.release())};
     sets->emplace_back(set->A(), set->b());
   }
+}
+
+void IrisInConfigurationSpaceFromCliqueCover(
+    const multibody::MultibodyPlant<double>& plant,
+    const systems::Context<double>& context, const CollisionChecker& checker,
+    const IrisFromCliqueCoverOptions& options, std::vector<HPolyhedron>* sets) {
+  // Convert the concrete HPolyhedrons to ConvexSets
+  ConvexSets abstract_sets;
+  abstract_sets.reserve(sets->size());
+  for (const auto& set : *sets) {
+    abstract_sets.emplace_back(std::move(set));
+  }
+  // The pointers in sets are now owned by abstract sets
+  sets->clear();
+
+  // The sampling distribution for the domain of the configuration space.
+  std::shared_ptr<PointSamplerBase> sampler;
+  if (options.point_sampler.has_value()) {
+    sampler = options.point_sampler.value();
+  } else if (options.iris_options.bounding_region.has_value()) {
+    sampler = std::make_shared<UniformSetSampler<HPolyhedron>>(
+        options.iris_options.bounding_region.value(), options.generator);
+  } else {
+    sampler = std::make_shared<UniformSetSampler<Hyperrectangle>>(
+        Hyperrectangle(plant.GetPositionLowerLimits(),
+                       plant.GetPositionUpperLimits()),
+        options.generator);
+  }
+
+  // TODO(Alexandre.Amice) Parallelize this if it becomes a performance
+  // bottleneck.
+  const std::function<bool(const Eigen::Ref<const Eigen::VectorXd>&)>&
+      reject_in_collision =
+          [&checker](const Eigen::Ref<const Eigen::VectorXd>& sample) {
+            return static_cast<bool>(
+                checker.CheckConfigsCollisionFree(sample).at(0));
+          };
+
 }
 
 }  // namespace planning
