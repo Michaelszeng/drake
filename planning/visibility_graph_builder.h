@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 
+#include "drake/common/parallelism.h"
 #include "drake/planning/adjacency_matrix_builder_base.h"
 #include "drake/planning/collision_checker.h"
 
@@ -9,15 +10,15 @@ namespace planning {
 
 class VisibilityGraphBuilder final : public AdjacencyMatrixBuilderBase {
  public:
-  VisibilityGraphBuilder(std::shared_ptr<CollisionChecker> checker,
-                         bool parallelize = true);
+  VisibilityGraphBuilder(const CollisionChecker& checker,
+                         const Parallelism parallelize = Parallelism::Max());
 
  private:
   Eigen::SparseMatrix<bool> DoBuildAdjacencyMatrix(
       const Eigen::Ref<const Eigen::MatrixXd>& points) const override;
 
-  std::shared_ptr<CollisionChecker> checker_;
-  bool parallelize_;
+  const CollisionChecker& checker_;
+  const Parallelism parallelize_;
 };
 
 }  // namespace planning

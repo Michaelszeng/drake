@@ -7,6 +7,7 @@
 #include <queue>
 #include <thread>
 #include <utility>
+#include <iostream>
 
 #include "drake/common/drake_copyable.h"
 #include "drake/common/ssize.h"
@@ -136,6 +137,7 @@ void ComputeGreedyTruncatedCliqueCover(
       MakeFalseRowsAndColumns(max_clique, adjacency_matrix);
     }
   }
+  std::cout << "MAX CLIQUE COMPUTED " << num_cliques << std::endl;
   computed_cliques->done_filling();
 }
 
@@ -162,6 +164,7 @@ std::queue<copyable_unique_ptr<ConvexSet>> SetBuilderWorker(
     }
     ret.emplace(set_builder->BuildConvexSet(clique_points));
   }
+  std::cout << "builder returning " << ssize(ret) << " sets" << std::endl;
   return ret;
 }
 
@@ -196,7 +199,7 @@ void ApproximateConvexCoverFromCliqueCover(
         point_sampler->SamplePoints(options.num_sampled_points);
     Eigen::SparseMatrix<bool> adjacency_matrix =
         adjacency_matrix_builder->BuildAdjacencyMatrix(points);
-
+    std::cout << fmt::format("adjacency_matrix edges = {}", adjacency_matrix.nonZeros()/2) << std::endl;
     // Reserve more space for the newly built sets. Typically, we won't get
     // this worst case number of new cliques, so we only reserve half of the
     // worst case.

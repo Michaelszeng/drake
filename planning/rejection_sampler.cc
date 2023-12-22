@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <utility>
-
+#include <iostream>
 namespace drake {
 namespace planning {
 

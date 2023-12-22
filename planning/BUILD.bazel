@@ -272,6 +272,8 @@ drake_cc_library(
         "//planning/graph_algorithms:max_clique_solver_base",
         ":iris_region_from_clique_builder",
         ":coverage_checker_via_bernoulli_test",
+        ":visibility_graph_builder",
+        ":collision_checker",
     ],
 )
 
@@ -516,12 +518,18 @@ drake_cc_googletest(
     deps = [":iris_region_from_clique_builder",
             "//multibody/parsing:parser",
         "//systems/framework:diagram_builder"],
+        data = ["//multibody/parsing:test_models"],
 )
 
 drake_cc_googletest(
     name = "iris_from_clique_cover_test",
     timeout = "moderate",
-    deps = [":iris_from_clique_cover"],
+    deps = [":iris_from_clique_cover",
+            ":scene_graph_collision_checker",
+            "//multibody/parsing:parser",
+        "//systems/framework:diagram_builder",
+        ":robot_diagram_builder"],
+        data = ["//multibody/parsing:test_models"]
 )
 
 add_lint_tests()

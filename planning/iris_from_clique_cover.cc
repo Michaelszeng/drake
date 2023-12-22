@@ -5,6 +5,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "drake/common/random.h"
 #include "drake/geometry/optimization/convex_set.h"
@@ -15,6 +16,9 @@
 #include "drake/planning/iris_region_from_clique_builder.h"
 #include "drake/planning/rejection_sampler.h"
 #include "drake/planning/uniform_set_sampler.h"
+#include "drake/planning/visibility_graph_builder.h"
+#include "drake/common/parallelism.h"
+
 
 namespace drake {
 namespace planning {
@@ -173,9 +177,8 @@ void IrisFromCliqueCover(const ConvexSets& obstacles, const HPolyhedron& domain,
 }
 
 void IrisInConfigurationSpaceFromCliqueCover(
-    const multibody::MultibodyPlant<double>& plant,
-    const systems::Context<double>& context, const CollisionChecker& checker,
-    const IrisFromCliqueCoverOptions& options, std::vector<HPolyhedron>* sets) {
+    const CollisionChecker& checker, const IrisFromCliqueCoverOptions& options,
+    std::vector<HPolyhedron>* sets) {
   // Convert the concrete HPolyhedrons to ConvexSets
   ConvexSets abstract_sets;
   abstract_sets.reserve(sets->size());
@@ -185,17 +188,17 @@ void IrisInConfigurationSpaceFromCliqueCover(
   // The pointers in sets are now owned by abstract sets
   sets->clear();
 
-  // The sampling distribution for the domain of the configuration space.
-  std::shared_ptr<PointSamplerBase> sampler;
+  // The base sampling distribution for the domain of the configuration space.
+  std::shared_ptr<PointSamplerBase> base_sampler;
   if (options.point_sampler.has_value()) {
-    sampler = options.point_sampler.value();
+    base_sampler = options.point_sampler.value();
   } else if (options.iris_options.bounding_region.has_value()) {
-    sampler = std::make_shared<UniformSetSampler<HPolyhedron>>(
+    base_sampler = std::make_shared<UniformSetSampler<HPolyhedron>>(
         options.iris_options.bounding_region.value(), options.generator);
   } else {
-    sampler = std::make_shared<UniformSetSampler<Hyperrectangle>>(
-        Hyperrectangle(plant.GetPositionLowerLimits(),
-                       plant.GetPositionUpperLimits()),
+    base_sampler = std::make_shared<UniformSetSampler<Hyperrectangle>>(
+        Hyperrectangle(checker.plant().GetPositionLowerLimits(),
+                       checker.plant().GetPositionUpperLimits()),
         options.generator);
   }
 
@@ -203,11 +206,83 @@ void IrisInConfigurationSpaceFromCliqueCover(
   // bottleneck.
   const std::function<bool(const Eigen::Ref<const Eigen::VectorXd>&)>&
       reject_in_collision =
-          [&checker](const Eigen::Ref<const Eigen::VectorXd>& sample) {
-            return static_cast<bool>(
-                checker.CheckConfigsCollisionFree(sample).at(0));
+          [&checker,
+           &options](const Eigen::Ref<const Eigen::VectorXd>& sample) {
+            for (const auto& obstacle :
+                 options.iris_options.configuration_obstacles) {
+              if (obstacle->PointInSet(sample)) {
+                return true;
+              }
+            }
+            return !checker.CheckConfigCollisionFree(sample);
           };
+  std::unique_ptr<PointSamplerBase> rejection_collision_sampler =
+      std::make_unique<RejectionSampler>(base_sampler, reject_in_collision);
+  std::unique_ptr<CoverageCheckerBase> coverage_checker =
+      std::make_unique<CoverageCheckerViaBernoulliTest>(
+          options.coverage_termination_threshold,
+          options.num_points_per_coverage_check,
+          std::move(rejection_collision_sampler));
 
+  // Define the PointSampler for points in the cliques.
+  const std::function<bool(const Eigen::Ref<const Eigen::VectorXd>&)>&
+      reject_in_collision_and_sets =
+          [&reject_in_collision,
+           &abstract_sets](const Eigen::Ref<const Eigen::VectorXd>& sample) {
+            for (const auto& set : abstract_sets) {
+              if (set->PointInSet(sample)) {
+                return true;
+              }
+            }
+            return reject_in_collision(sample);
+          };
+  std::unique_ptr<PointSamplerBase> point_sampler =
+      std::make_unique<RejectionSampler>(base_sampler,
+                                         reject_in_collision_and_sets);
+
+  // Define the adjacency matrix builder.
+  std::unique_ptr<AdjacencyMatrixBuilderBase> adjacency_matrix_builder =
+      std::make_unique<VisibilityGraphBuilder>(VisibilityGraphBuilder(checker));
+
+  // Define the set builders.
+  const int max_concurrency{
+      std::max(static_cast<int>(std::thread::hardware_concurrency()) - 1, 1)};
+  const int num_builders =
+      options.num_builders < 1 ? max_concurrency : options.num_builders;
+  std::vector<std::unique_ptr<ConvexSetFromCliqueBuilderBase>> set_builders;
+  set_builders.reserve(num_builders);
+  for (int i = 0; i < num_builders; ++i) {
+    set_builders.emplace_back(
+        std::make_unique<IrisInConfigurationSpaceRegionFromCliqueBuilder>(
+            checker.plant(), checker.plant_context(), options.iris_options,
+            options.rank_tol_for_lowner_john_ellipse));
+  }
+
+  ApproximateConvexCoverFromCliqueCoverOptions
+      approximate_convex_cover_from_clique_cover_options;
+  // Cliques need to generate full dimensional Lowner John ellipsoids. So we
+  // ensure that we always retrieve cliques of size at least 1 + the plant size.
+  const int minimum_clique_size =
+      std::max(options.minimum_clique_size,
+               static_cast<int>(checker.plant().num_positions() + 1));
+  approximate_convex_cover_from_clique_cover_options.minimum_clique_size =
+      minimum_clique_size;
+  approximate_convex_cover_from_clique_cover_options.num_sampled_points =
+      options.num_points_per_visibility_round;
+
+  ApproximateConvexCoverFromCliqueCover(
+      coverage_checker.get(), point_sampler.get(),
+      adjacency_matrix_builder.get(), options.max_clique_solver.get(),
+      set_builders, approximate_convex_cover_from_clique_cover_options,
+      &abstract_sets);
+
+  // Now put the HPolyhedra back into sets.
+  sets->reserve(abstract_sets.size());
+  for (auto& abstract_set : abstract_sets) {
+    std::unique_ptr<HPolyhedron> set{
+        dynamic_cast<HPolyhedron*>(abstract_set.release())};
+    sets->emplace_back(set->A(), set->b());
+  }
 }
 
 }  // namespace planning

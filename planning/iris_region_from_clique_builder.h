@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "drake/geometry/optimization/hpolyhedron.h"
+#include "drake/geometry/optimization/hyperrectangle.h"
 #include "drake/geometry/optimization/iris.h"
 #include "drake/planning/convex_set_from_clique_builder_base.h"
 
@@ -12,6 +13,7 @@ namespace planning {
 using geometry::optimization::ConvexSet;
 using geometry::optimization::ConvexSets;
 using geometry::optimization::HPolyhedron;
+using geometry::optimization::Hyperrectangle;
 using geometry::optimization::IrisOptions;
 
 struct DefaultIrisOptionsForIrisRegionFromCliqueBuilder : public IrisOptions {

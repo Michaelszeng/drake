@@ -5,7 +5,7 @@
 #include <vector>
 
 #include <common_robotics_utilities/parallelism.hpp>
-
+#include <iostream>
 using common_robotics_utilities::parallelism::DegreeOfParallelism;
 using common_robotics_utilities::parallelism::DynamicParallelForIndexLoop;
 using common_robotics_utilities::parallelism::ParallelForBackend;
@@ -162,6 +162,7 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
   Eigen::SparseMatrix<bool> mat(num_points, num_points);
   EdgesIterator edges_iterator(edges);
   mat.setFromTriplets(edges_iterator.begin(), edges_iterator.end());
+  std::cout << "GRAPH BUILT" << std::endl;
   return mat;
 }
 
