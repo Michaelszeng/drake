@@ -1,6 +1,9 @@
 #include "drake/planning/iris_region_from_clique_builder.h"
 
+#include <utility>
+
 #include "drake/geometry/optimization/hyperellipsoid.h"
+
 namespace drake {
 namespace planning {
 using geometry::optimization::ConvexSets;
@@ -34,8 +37,10 @@ std::unique_ptr<ConvexSet> IrisRegionFromCliqueBuilder::DoBuildConvexSet(
       Hyperellipsoid::MinimumVolumeCircumscribedEllipsoid(
           clique_points, rank_tol_for_lowner_john_ellipse_);
   options_.starting_ellipse = starting_ellipse;
-  return std::move(geometry::optimization::Iris(
-      obstacles_, starting_ellipse.center(), domain_, options_)).Clone();
+  return std::move(geometry::optimization::Iris(obstacles_,
+                                                starting_ellipse.center(),
+                                                domain_, options_))
+      .Clone();
 }
 
 }  // namespace planning

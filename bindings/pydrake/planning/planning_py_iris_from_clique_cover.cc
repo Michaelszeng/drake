@@ -318,12 +318,14 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
     py::class_<IrisFromCliqueCoverOptions>(
         m, "IrisFromCliqueCoverOptions", cls_doc.doc)
         .def(py::init<>())
-        // A Python specific constructor to allow the clique cover solver to be set.
-        .def(py::init([](std::unique_ptr<MaxCliqueSolverBase> solver){
+        // A Python specific constructor to allow the clique cover solver to be
+        // set.
+        .def(py::init([](std::unique_ptr<MaxCliqueSolverBase> solver) {
           IrisFromCliqueCoverOptions ret{};
           ret.max_clique_solver = std::move(solver);
           return ret;
-        }), py::arg("solver"))
+        }),
+            py::arg("solver"))
         .def_readwrite("iris_options",
             &IrisFromCliqueCoverOptions::iris_options, cls_doc.iris_options.doc)
         .def_readwrite("coverage_termination_threshold",
@@ -360,12 +362,10 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
           IrisFromCliqueCover(
               CloneConvexSets(obstacles), domain, options, &sets);
           return sets;
-          ;
         },
         py::arg("obstacles"), py::arg("domain"), py::arg("options"),
         py::arg("sets"), doc.IrisFromCliqueCover.doc);
   }
-
 }  // DefinePlanningIrisFromCliqueCover
 }  // namespace internal
 }  // namespace pydrake

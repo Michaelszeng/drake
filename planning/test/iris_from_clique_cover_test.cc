@@ -40,7 +40,7 @@ GTEST_TEST(IrisFromCliqueCover, BoxWithCornerObstaclesTest) {
   options.num_builders = 2;
   options.num_points_per_coverage_check = 100;
   options.num_points_per_visibility_round = 100;
-  std::vector<copyable_unique_ptr<HPolyhedron>> sets;
+  std::vector<HPolyhedron> sets;
   IrisFromCliqueCover(obstacles, domain, options, &sets);
 
   EXPECT_EQ(ssize(sets), 2);
@@ -76,10 +76,10 @@ GTEST_TEST(IrisFromCliqueCover, BoxWithCornerObstaclesTest) {
   ConvexSets abstract_sets;
   double computed_volume{0};
   for (const auto& set : sets) {
-    abstract_sets.emplace_back(set->Clone());
+    abstract_sets.emplace_back(set.Clone());
     computed_volume +=
-        set->CalcVolumeViaSampling(&generator,
-                                   1e-4 /* Ask for high relative accuracy */)
+        set.CalcVolumeViaSampling(&generator,
+                                  1e-4 /* Ask for high relative accuracy */)
             .volume;
   }
   EXPECT_TRUE(coverage_checker.CheckCoverage(abstract_sets));

@@ -110,7 +110,7 @@ GTEST_TEST(IrisRegionFromCliqueBuilder, TestBuildConvexSet) {
 
   const Eigen::Matrix<double, 2, 4> clique1{{0.45, 0.45, 0.55, 0.55},
                                             {0.0, 1.0, 0.0, 1.0}};
-  copyable_unique_ptr<ConvexSet> set1_base = builder.BuildConvexSet(clique1);
+  std::unique_ptr<ConvexSet> set1_base = builder.BuildConvexSet(clique1);
   const HPolyhedron* set1 = dynamic_cast<const HPolyhedron*>(set1_base.get());
   // The convex hull of these points is approximately Box1.
   const Eigen::Matrix<double, 2, 4> test_points1{{0.46, 0.46, 0.54, 0.54},
@@ -121,7 +121,7 @@ GTEST_TEST(IrisRegionFromCliqueBuilder, TestBuildConvexSet) {
 
   const Eigen::Matrix<double, 2, 4> clique2{{0.0, 1.0, 0.0, 1.0},
                                             {0.45, 0.45, 0.55, 0.55}};
-  copyable_unique_ptr<ConvexSet> set2_base = builder.BuildConvexSet(clique2);
+  std::unique_ptr<ConvexSet> set2_base = builder.BuildConvexSet(clique2);
   const HPolyhedron* set2 = dynamic_cast<const HPolyhedron*>(set2_base.get());
   // The convex hull of these points is approximately Box2.
   const Eigen::Matrix<double, 2, 4> test_points2{{0.01, 0.99, 0.01, 0.99},

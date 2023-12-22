@@ -36,6 +36,7 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         model_instance_index = builder.plant().GetModelInstanceByName("box")
         robot_diagram = builder.Build()
         return (robot_diagram, model_instance_index)
+
     def _make_scene_graph_collision_checker(self, use_provider, use_function):
         # Code taken from
         # bindings/pydrake/planning/test/collision_checker_test.py
@@ -125,7 +126,6 @@ class TestIrisFromCliqueCover(unittest.TestCase):
             def DoCheckCoverage(self, current_sets):
                 return any([c.IsEmpty() for c in current_sets])
 
-
         checker = BadCoverageChecker()
         sets = [Hyperrectangle(np.array([0, 0]), np.array([1, 1])),
                 HPolyhedron(np.array([[-1, 0], [0, -1], [1, 1]]),
@@ -133,7 +133,7 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         self.assertFalse(checker.CheckCoverage(sets=sets))
         # A trivially empty set. This test is here to ensure that
         # DoCheckCoverage is actually being accessed.
-        sets.append(HPolyhedron(np.array([[1],[-1]]), np.array([[-1],[-1]])))
+        sets.append(HPolyhedron(np.array([[1], [-1]]), np.array([[-1], [-1]])))
         self.assertTrue(checker.CheckCoverage(sets=sets))
 
     def test_bernoulli_coverage_checker(self):
@@ -145,11 +145,12 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         num_threads = 3
         point_in_set_tol = 1e-10
 
-        checker = mut.CoverageCheckerViaBernoulliTest(alpha=alpha,
-                                      num_points_per_check=num_points_per_check,
-                                      sampler=point_sampler,
-                                      num_threads=num_threads,
-                                      point_in_set_tol=point_in_set_tol)
+        checker = mut.CoverageCheckerViaBernoulliTest(
+            alpha=alpha,
+            num_points_per_check=num_points_per_check,
+            sampler=point_sampler,
+            num_threads=num_threads,
+            point_in_set_tol=point_in_set_tol)
         self.assertEqual(checker.get_alpha(), alpha)
         checker.set_alpha(alpha=0.25)
         self.assertEqual(checker.get_alpha(), 0.25)
@@ -170,12 +171,13 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         # We have 100% coverage since the sets is the domain. For numerical
         # reasons we just ensure the sampled coverage is over 90%.
         sets = [domain]
-        self.assertGreaterEqual(checker.GetSampledCoverageFraction(sets=sets), 0.9)
+        self.assertGreaterEqual(checker.GetSampledCoverageFraction(sets=sets),
+                                0.9)
         self.assertTrue(checker.CheckCoverage(sets=sets))
 
-
         default_checker = mut.CoverageCheckerViaBernoulliTest(
-            alpha=alpha, num_points_per_check=num_points_per_check,
+            alpha=alpha,
+            num_points_per_check=num_points_per_check,
             sampler=point_sampler
         )
         self.assertEqual(default_checker.get_num_threads(), -1)
@@ -185,6 +187,7 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         class FullAdjacencyMatrix(mut.AdjacencyMatrixBuilderBase):
             def __init__(self):
                 mut.AdjacencyMatrixBuilderBase.__init__(self)
+
             def DoBuildAdjacencyMatrix(self, points):
                 return np.ones((points.shape[1], points.shape[1]))
 
@@ -193,7 +196,8 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         points = np.vstack([x]*4)
         adjacency = builder.BuildAdjacencyMatrix(points)
         np.testing.assert_array_equal(adjacency.toarray(),
-                                      np.ones((points.shape[1], points.shape[1])))
+                                      np.ones((points.shape[1],
+                                               points.shape[1])))
         self.assertIsInstance(adjacency, scipy.sparse.csc_matrix)
 
     def test_visibility_graph_builder(self):
@@ -272,7 +276,7 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         self.assertIsInstance(region, HPolyhedron)
         self.assertTrue(
             region.ContainedIn(
-                HPolyhedron.MakeBox(np.array([0,1]), np.array([1,3]))
+                HPolyhedron.MakeBox(np.array([0, 1]), np.array([1, 3]))
             )
         )
 
@@ -298,6 +302,7 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         class BadPointSampler(mut.PointSamplerBase):
             def __init__(self):
                 mut.PointSamplerBase.__init__(self)
+
             def DoSamplePoints(self, num_points):
                 clique = np.array([
                     [0.1, 0.4, 0.9, 0.8],
@@ -307,9 +312,11 @@ class TestIrisFromCliqueCover(unittest.TestCase):
                 return clique
 
         point_sampler = BadPointSampler()
+
         class FullAdjacencyMatrixBuilder(mut.AdjacencyMatrixBuilderBase):
             def __init__(self):
                 mut.AdjacencyMatrixBuilderBase.__init__(self)
+
             def DoBuildAdjacencyMatrix(self, points):
                 return np.ones((points.shape[1], points.shape[1]))
 
@@ -327,6 +334,7 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         class VPolytopeSetBuilder(mut.ConvexSetFromCliqueBuilderBase):
             def __init__(self):
                 mut.ConvexSetFromCliqueBuilderBase.__init__(self)
+
             def DoBuildConvexSet(self, clique_points):
                 return VPolytope(clique_points)
 
@@ -334,13 +342,13 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         set_builders = [VPolytopeSetBuilder() for _ in range(num_set_builders)]
         options = mut.ApproximateConvexCoverFromCliqueCoverOptions()
 
-
-        sets = mut.ApproximateConvexCoverFromCliqueCover(coverage_checker=coverage_checker,
-                                                         point_sampler=point_sampler,
-                                                         adjacency_matrix_builder=adjacency_matrix_builder,
-                                                         max_clique_solver=max_clique_solver,
-                                                         set_builders=set_builders,
-                                                         options=options)
+        sets = mut.ApproximateConvexCoverFromCliqueCover(
+            coverage_checker=coverage_checker,
+            point_sampler=point_sampler,
+            adjacency_matrix_builder=adjacency_matrix_builder,
+            max_clique_solver=max_clique_solver,
+            set_builders=set_builders,
+            options=options)
         self.assertGreaterEqual(len(sets), 1)
         self.assertIsInstance(sets[0], VPolytope)
 
@@ -368,7 +376,8 @@ class TestIrisFromCliqueCover(unittest.TestCase):
         options.point_sampler = mut.UniformHyperrectangleSampler(
             set=Hyperrectangle(np.array([0, 0]), np.array([1, 1])),
         )
-        self.assertIsInstance(options.point_sampler, mut.UniformHyperrectangleSampler)
+        self.assertIsInstance(options.point_sampler,
+                              mut.UniformHyperrectangleSampler)
 
         options.num_builders = 10
         self.assertEqual(options.num_builders, 10)
@@ -388,8 +397,6 @@ class TestIrisFromCliqueCover(unittest.TestCase):
                               mut.MaxCliqueSolverViaMip)
         options2 = mut.IrisFromCliqueCoverOptions(BadCliqueSolver())
         self.assertIsInstance(options2.max_clique_solver, BadCliqueSolver)
-
-
 
     def test_iris_from_clique_cover(self):
         """

@@ -23,7 +23,8 @@ void DefinePlanningCollisionChecker(py::module m) {
   {
     using Class = CollisionChecker;
     constexpr auto& cls_doc = doc.CollisionChecker;
-    py::class_<Class, std::shared_ptr<Class>> cls(m, "CollisionChecker", cls_doc.doc);
+    py::class_<Class, std::shared_ptr<Class>> cls(
+        m, "CollisionChecker", cls_doc.doc);
     cls  // BR
         .def("model", &Class::model, py_rvp::reference_internal,
             cls_doc.model.doc)
