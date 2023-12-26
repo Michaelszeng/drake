@@ -397,7 +397,7 @@ class TestIrisFromCliqueCover(unittest.TestCase):
                               mut.MaxCliqueSolverViaMip)
         options2 = mut.IrisFromCliqueCoverOptions(BadCliqueSolver())
         self.assertIsInstance(options2.max_clique_solver, BadCliqueSolver)
-
+git
     def test_iris_from_clique_cover(self):
         """
         A 1x1 box domain with a 0.45x0.45 obstacle in each corner. The free
