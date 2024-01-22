@@ -5,6 +5,7 @@
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperrectangle.h"
 #include "drake/geometry/optimization/iris.h"
+#include "drake/planning/collision_checker.h"
 #include "drake/planning/convex_set_from_clique_builder_base.h"
 
 namespace drake {
@@ -89,7 +90,8 @@ class IrisInConfigurationSpaceRegionFromCliqueBuilder final
     : public ConvexSetFromCliqueBuilderBase {
  public:
   /**
-   * @param plant describes the kinematics of configuration space. See @Iris for explanation.
+   * @param plant describes the kinematics of configuration space. See @Iris for
+   * explanation.
    * @param context is a context of the @p plant. See @Iris for explanation.
    * @param options The options for IRIS. See @Iris and @IrisOptions for
    * explanation.
@@ -98,8 +100,7 @@ class IrisInConfigurationSpaceRegionFromCliqueBuilder final
    * @Hyperellipsoid::MinimumVolumeCircumscribedEllipsoid for explanation.
    */
   IrisInConfigurationSpaceRegionFromCliqueBuilder(
-      const multibody::MultibodyPlant<double>& plant,
-      const systems::Context<double>& context,
+      const CollisionChecker& checker,
       const IrisOptions& options =
           DefaultIrisOptionsForIrisRegionFromCliqueBuilder(),
       const double rank_tol_for_lowner_john_ellipse = 1e-6);
@@ -121,8 +122,7 @@ class IrisInConfigurationSpaceRegionFromCliqueBuilder final
   std::unique_ptr<ConvexSet> DoBuildConvexSet(
       const Eigen::Ref<const Eigen::MatrixXd>& clique_points) override;
 
-  const multibody::MultibodyPlant<double>& plant_;
-  const systems::Context<double>& context_;
+  const CollisionChecker& checker_;
   IrisOptions options_;
   double rank_tol_for_lowner_john_ellipse_;
 };

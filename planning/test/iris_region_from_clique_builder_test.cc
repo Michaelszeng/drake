@@ -8,6 +8,8 @@
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/vpolytope.h"
 #include "drake/multibody/parsing/parser.h"
+#include "drake/planning/robot_diagram_builder.h"
+#include "drake/planning/scene_graph_collision_checker.h"
 #include "drake/systems/framework/diagram_builder.h"
 
 namespace drake {
@@ -175,21 +177,20 @@ const char boxes_in_2d_urdf[] = R"""(
 
 GTEST_TEST(IrisInConfigurationSpaceRegionFromCliqueBuilder,
            TestCtorSettersAndGetters) {
-  systems::DiagramBuilder<double> builder;
-  multibody::MultibodyPlant<double>& plant =
-      multibody::AddMultibodyPlantSceneGraph(&builder, 0.0);
-  multibody::Parser parser(&plant);
-  parser.package_map().AddPackageXml(FindResourceOrThrow(
+  RobotDiagramBuilder<double> builder(0.0);
+  builder.parser().package_map().AddPackageXml(FindResourceOrThrow(
       "drake/multibody/parsing/test/box_package/package.xml"));
-  parser.AddModelsFromString(boxes_in_2d_urdf, "urdf");
-  plant.Finalize();
-  auto diagram = builder.Build();
-
-  auto context = diagram->CreateDefaultContext();
+  CollisionCheckerParams params;
+  params.robot_model_instances =
+      builder.parser().AddModelsFromString(boxes_in_2d_urdf, "urdf");
+  params.edge_step_size = 0.01;
+  params.model = builder.Build();
+  auto checker =
+      std::make_unique<SceneGraphCollisionChecker>(std::move(params));
 
   IrisOptions options{};
-  IrisInConfigurationSpaceRegionFromCliqueBuilder region_builder(
-      plant, *context, options, 1e-6);
+  IrisInConfigurationSpaceRegionFromCliqueBuilder region_builder(*checker,
+                                                                 options, 1e-6);
 
   const double rank_tol_for_lowner_john_ellipse2 = 1e-10;
   region_builder.set_rank_tol_for_lowner_john_ellipse(
@@ -214,30 +215,30 @@ GTEST_TEST(IrisInConfigurationSpaceRegionFromCliqueBuilder,
 │             │
 │             │
 └─────────────┘
-We use only a single configuration obstacle, and verify the the computed
-halfspace changes.
+We use only a single configuration obstacle, and verify the computed
+halfspaces change.
 */
 GTEST_TEST(IrisInConfigurationSpaceRegionFromCliqueBuilder,
            TestBuildConvexSet) {
-  systems::DiagramBuilder<double> builder;
-  multibody::MultibodyPlant<double>& plant =
-      multibody::AddMultibodyPlantSceneGraph(&builder, 0.0);
-  multibody::Parser parser(&plant);
-  parser.package_map().AddPackageXml(FindResourceOrThrow(
+  RobotDiagramBuilder<double> builder(0.0);
+  builder.parser().package_map().AddPackageXml(FindResourceOrThrow(
       "drake/multibody/parsing/test/box_package/package.xml"));
-  parser.AddModelsFromString(boxes_in_2d_urdf, "urdf");
-  plant.Finalize();
-  auto diagram = builder.Build();
-
-  auto context = diagram->CreateDefaultContext();
+  CollisionCheckerParams params;
+  params.robot_model_instances =
+      builder.parser().AddModelsFromString(boxes_in_2d_urdf, "urdf");
+  params.edge_step_size = 0.01;
+  params.model = builder.Build();
+  auto checker =
+      std::make_unique<SceneGraphCollisionChecker>(std::move(params));
 
   IrisOptions options{};
   ConvexSets obstacles;
   obstacles.emplace_back(VPolytope::MakeBox(Vector2d(.2, .2), Vector2d(1, 1)));
   options.configuration_obstacles = obstacles;
+  options.iteration_limit = 1;
 
-  IrisInConfigurationSpaceRegionFromCliqueBuilder region_builder(
-      plant, *context, options, 1e-6);
+  IrisInConfigurationSpaceRegionFromCliqueBuilder region_builder(*checker,
+                                                                 options, 1e-6);
 
   // A clique spread along the y direction.
   const Eigen::Matrix<double, 2, 4> clique1{{0.75, 0.75, 0.125, 0.125},
@@ -249,7 +250,7 @@ GTEST_TEST(IrisInConfigurationSpaceRegionFromCliqueBuilder,
   const Eigen::Matrix<double, 2, 4> clique2{{0.1, 0.1, 0.9, 0.9},
                                             {0.1, 0.2, 0.1, 0.2}};
   const Eigen::Matrix<double, 2, 4> test_points2{{0.05, 0.05, 0.96, 0.96},
-                                                 {0.1, 0.3, 0.1, 0.3}};
+                                                 {0.01, 0.19, 0.01, 0.19}};
 
   std::unique_ptr<ConvexSet> set1_base = region_builder.BuildConvexSet(clique1);
   const HPolyhedron* set1 = dynamic_cast<const HPolyhedron*>(set1_base.get());
@@ -258,12 +259,11 @@ GTEST_TEST(IrisInConfigurationSpaceRegionFromCliqueBuilder,
   }
   bool test_points2_not_covered_by_set1 = false;
   for (int i = 0; i < test_points2.cols(); ++i) {
-    if(!set1->PointInSet(test_points2.col(i), 1e-6)) {
-        test_points2_not_covered_by_set1 = true;
+    if (!set1->PointInSet(test_points2.col(i), 1e-6)) {
+      test_points2_not_covered_by_set1 = true;
     }
   }
   EXPECT_TRUE(test_points2_not_covered_by_set1);
-
 
   std::unique_ptr<ConvexSet> set2_base = region_builder.BuildConvexSet(clique2);
   const HPolyhedron* set2 = dynamic_cast<const HPolyhedron*>(set2_base.get());
@@ -272,8 +272,8 @@ GTEST_TEST(IrisInConfigurationSpaceRegionFromCliqueBuilder,
   }
   bool test_points1_not_covered_by_set2 = false;
   for (int i = 0; i < test_points1.cols(); ++i) {
-    if(!set2->PointInSet(test_points1.col(i), 1e-6)) {
-        test_points1_not_covered_by_set2 = true;
+    if (!set2->PointInSet(test_points1.col(i), 1e-6)) {
+      test_points1_not_covered_by_set2 = true;
     }
   }
   EXPECT_TRUE(test_points1_not_covered_by_set2);

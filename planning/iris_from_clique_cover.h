@@ -100,13 +100,9 @@ void IrisFromCliqueCover(const ConvexSets& obstacles, const HPolyhedron& domain,
  * @param sets [in/out] initial sets covering the space (potentially empty). The
  * cover is written into this vector.
  */
-//void IrisInConfigurationSpaceFromCliqueCover(
-//    const multibody::MultibodyPlant<double>& plant,
-//    const systems::Context<double>& context, const CollisionChecker& checker,
-//    const IrisFromCliqueCoverOptions& options, std::vector<HPolyhedron>* sets);
 void IrisInConfigurationSpaceFromCliqueCover(
-    const CollisionChecker& checker,
-    const IrisFromCliqueCoverOptions& options, std::vector<HPolyhedron>* sets);
+    const CollisionChecker& checker, const IrisFromCliqueCoverOptions& options,
+    std::vector<HPolyhedron>* sets);
 
 }  // namespace planning
 }  // namespace drake

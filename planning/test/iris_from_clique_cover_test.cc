@@ -134,7 +134,6 @@ const char boxes_in_2d_urdf[] = R"""(
 </robot>
 )""";
 
-
 /* A movable sphere with fixed boxes in all corners.
 ┌─────┬───┬─────┐
 │     │   │     │
@@ -195,11 +194,7 @@ GTEST_TEST(IrisInConfigurationSpaceFromCliqueCover,
   CollisionCheckerParams params;
 
   RobotDiagramBuilder<double> builder(0.0);
-//  builder.parser().package_map().AddPackageXml(FindResourceOrThrow(
-//      "drake/multibody/parsing/test/box_package/package.xml"));
-//  params.robot_model_instances =
-//      builder.parser().AddModelsFromString(boxes_in_2d_urdf, "urdf");
-params.robot_model_instances =
+  params.robot_model_instances =
       builder.parser().AddModelsFromString(boxes_in_corners, "urdf");
   params.edge_step_size = 0.01;
 
@@ -209,9 +204,9 @@ params.robot_model_instances =
 
   IrisFromCliqueCoverOptions options;
 
-//  ConvexSets obstacles;
-//  obstacles.emplace_back(VPolytope::MakeBox(Vector2d(.2, .2), Vector2d(1, 1)));
-//  options.iris_options.configuration_obstacles = obstacles;
+  //  ConvexSets obstacles;
+  //  obstacles.emplace_back(VPolytope::MakeBox(Vector2d(.2, .2), Vector2d(1,
+  //  1))); options.iris_options.configuration_obstacles = obstacles;
   options.num_builders = 2;
   options.num_points_per_coverage_check = 100;
   options.num_points_per_visibility_round = 25;

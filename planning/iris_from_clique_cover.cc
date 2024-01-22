@@ -5,8 +5,8 @@
 #include <thread>
 #include <utility>
 #include <vector>
-#include <iostream>
 
+#include "drake/common/parallelism.h"
 #include "drake/common/random.h"
 #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
@@ -17,8 +17,6 @@
 #include "drake/planning/rejection_sampler.h"
 #include "drake/planning/uniform_set_sampler.h"
 #include "drake/planning/visibility_graph_builder.h"
-#include "drake/common/parallelism.h"
-
 
 namespace drake {
 namespace planning {
@@ -254,7 +252,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
   for (int i = 0; i < num_builders; ++i) {
     set_builders.emplace_back(
         std::make_unique<IrisInConfigurationSpaceRegionFromCliqueBuilder>(
-            checker.plant(), checker.plant_context(), options.iris_options,
+            checker, options.iris_options,
             options.rank_tol_for_lowner_john_ellipse));
   }
 

@@ -345,6 +345,7 @@ drake_cc_library(
     interface_deps = [
         "//geometry/optimization:convex_set",
         "//geometry/optimization:iris",
+        ":collision_checker",
         ":convex_set_from_clique_builder_base",
     ],
 )
@@ -515,21 +516,27 @@ drake_cc_googletest(
 
 drake_cc_googletest(
     name = "iris_region_from_clique_builder_test",
-    deps = [":iris_region_from_clique_builder",
-            "//multibody/parsing:parser",
-        "//systems/framework:diagram_builder"],
-        data = ["//multibody/parsing:test_models"],
+    data = ["//multibody/parsing:test_models"],
+    deps = [
+        ":iris_region_from_clique_builder",
+        ":robot_diagram_builder",
+        ":scene_graph_collision_checker",
+        "//multibody/parsing:parser",
+        "//systems/framework:diagram_builder",
+    ],
 )
 
 drake_cc_googletest(
     name = "iris_from_clique_cover_test",
     timeout = "moderate",
-    deps = [":iris_from_clique_cover",
-            ":scene_graph_collision_checker",
-            "//multibody/parsing:parser",
+    data = ["//multibody/parsing:test_models"],
+    deps = [
+        ":iris_from_clique_cover",
+        ":robot_diagram_builder",
+        ":scene_graph_collision_checker",
+        "//multibody/parsing:parser",
         "//systems/framework:diagram_builder",
-        ":robot_diagram_builder"],
-        data = ["//multibody/parsing:test_models"]
+    ],
 )
 
 add_lint_tests()

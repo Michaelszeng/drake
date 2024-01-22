@@ -45,23 +45,33 @@ std::unique_ptr<ConvexSet> IrisRegionFromCliqueBuilder::DoBuildConvexSet(
 
 IrisInConfigurationSpaceRegionFromCliqueBuilder::
     IrisInConfigurationSpaceRegionFromCliqueBuilder(
-        const multibody::MultibodyPlant<double>& plant,
-        const systems::Context<double>& context, const IrisOptions& options,
+        const CollisionChecker& checker, const IrisOptions& options,
         const double rank_tol_for_lowner_john_ellipse)
-    : plant_(plant),
-      context_(context),
+    : checker_(checker),
       options_(options),
       rank_tol_for_lowner_john_ellipse_(rank_tol_for_lowner_john_ellipse) {}
 
 std::unique_ptr<ConvexSet>
 IrisInConfigurationSpaceRegionFromCliqueBuilder::DoBuildConvexSet(
     const Eigen::Ref<const Eigen::MatrixXd>& clique_points) {
-  const Hyperellipsoid starting_ellipse =
+  const Hyperellipsoid clique_ellipse =
       Hyperellipsoid::MinimumVolumeCircumscribedEllipsoid(
           clique_points, rank_tol_for_lowner_john_ellipse_);
-  options_.starting_ellipse = starting_ellipse;
+  if (checker_.CheckConfigCollisionFree(clique_ellipse.center())) {
+    options_.starting_ellipse = clique_ellipse;
+  } else {
+    // Find the nearest clique member to the center that is not in collision.
+    Eigen::Index nearest_point_col;
+    (clique_points - clique_ellipse.center())
+        .colwise()
+        .norm()
+        .maxCoeff(&nearest_point_col);
+    Eigen::VectorXd center = clique_points.col(nearest_point_col);
+    options_.starting_ellipse = Hyperellipsoid(center, clique_ellipse.A());
+  }
+
   return std::move(geometry::optimization::IrisInConfigurationSpace(
-                       plant_, context_, options_))
+                       checker_.plant(), checker_.plant_context(), options_))
       .Clone();
 }
 
