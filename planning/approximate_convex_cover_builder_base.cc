@@ -11,6 +11,8 @@
 #include "drake/common/drake_copyable.h"
 #include "drake/common/ssize.h"
 
+#include <iostream>
+
 namespace drake {
 namespace planning {
 
@@ -125,6 +127,7 @@ void ComputeGreedyTruncatedCliqueCover(
     AsyncQueue<VectorX<bool>>* computed_cliques) {
   float last_clique_size = std::numeric_limits<float>::infinity();
   int num_cliques = 0;
+  std::cout << "computing cliques" << std::endl;
   while (last_clique_size > minimum_clique_size &&
          adjacency_matrix->nonZeros() > minimum_clique_size) {
     const VectorX<bool> max_clique =
@@ -132,11 +135,13 @@ void ComputeGreedyTruncatedCliqueCover(
     last_clique_size = max_clique.template cast<int>().sum();
     if (last_clique_size > minimum_clique_size) {
       computed_cliques->push(max_clique);
+      std::cout << "clique added" << std::endl;
       ++num_cliques;
       MakeFalseRowsAndColumns(max_clique, adjacency_matrix);
     }
   }
   computed_cliques->done_filling();
+  std::cout << "done adding cliques" << std::endl;
 }
 
 // Pulls cliques from @p computed_cliques and constructs convex sets using @p
@@ -160,8 +165,11 @@ std::queue<copyable_unique_ptr<ConvexSet>> SetBuilderWorker(
         ++clique_col;
       }
     }
+    std::cout << "building set" << std::endl;
     ret.emplace(set_builder->BuildConvexSet(clique_points));
+    std::cout << "set built" << std::endl;
   }
+  std::cout << "returning sets" << std::endl;
   return ret;
 }
 
@@ -228,15 +236,20 @@ void ApproximateConvexCoverFromCliqueCover(
     }
     // The clique cover and the convex sets are computed asynchronously. Wait
     // for all the threads to join and then add the new sets to built sets.
+    std::cout << "waiting for clique thread to join" << std::endl;
     clique_cover_thread.join();
+    std::cout << "clique thread joined" << std::endl;
     for (auto& new_set_queue_future : build_sets_future) {
+      std::cout << "waiting for set builder thread to join" << std::endl;
       std::queue<copyable_unique_ptr<ConvexSet>> new_set_queue{
           new_set_queue_future.get()};
+      std::cout << "builder " << " joined" << std::endl;
       while (!new_set_queue.empty()) {
         convex_sets->push_back(std::move(new_set_queue.front()));
         new_set_queue.pop();
       }
     }
+    std::cout << "checking coverage" << std::endl;
   }
 }
 

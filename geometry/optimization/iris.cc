@@ -20,6 +20,7 @@
 #include "drake/solvers/choose_best_solver.h"
 #include "drake/solvers/ipopt_solver.h"
 #include "drake/solvers/snopt_solver.h"
+#include <iostream>
 
 namespace drake {
 namespace geometry {
@@ -444,6 +445,7 @@ struct GeometryPairWithDistance {
 HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
                                      const Context<double>& context,
                                      const IrisOptions& options) {
+  std::cout << "Performing Iris in configuration space." << std::endl;
   // Check the inputs.
   plant.ValidateContext(context);
   const int nq = plant.num_positions();
@@ -500,6 +502,8 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
     sets.emplace(geom_id, std::move(temp_set));
     frames.emplace(geom_id, &plant.GetBodyFromFrameId(frame_id)->body_frame());
   }
+
+  std::cout << "query object made" << std::endl;
 
   auto pairs = inspector.GetCollisionCandidates();
   const int n = static_cast<int>(pairs.size());
@@ -616,9 +620,12 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
   // For debugging visualization.
   Vector3d point_to_draw = Vector3d::Zero();
   int num_points_drawn = 0;
-
+  std::cout << "entering while loop" << std::endl;
   while (true) {
-    log()->info("IrisInConfigurationSpace iteration {}", iteration);
+        std::cout << fmt::format("IrisInConfigurationSpace iteration {}", iteration) << std::endl;
+
+//    log()->info("IrisInConfigurationSpace iteration {}", iteration);
+    std::cout << "first log hit" << std::endl;
     int num_constraints = num_initial_constraints;
     bool seed_point_requirement = true;
     HPolyhedron P_candidate = P;
@@ -748,22 +755,28 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
                     ssize(counter_examples[geom_pair]) >=
                 10 * options.num_collision_infeasible_samples) {
           warned_many_searches = true;
-          log()->info(
+//          log()->info(
+//              " Checking {} against {} has already required {} counter-example "
+//              "searches; still searching...",
+//              inspector.GetName(pair_w_distance.geomA),
+//              inspector.GetName(pair_w_distance.geomB),
+//              counter_example_searches_for_this_pair);
+          std::cout << fmt::format(
               " Checking {} against {} has already required {} counter-example "
               "searches; still searching...",
               inspector.GetName(pair_w_distance.geomA),
               inspector.GetName(pair_w_distance.geomB),
-              counter_example_searches_for_this_pair);
+              counter_example_searches_for_this_pair) << std::endl;
         }
       }
       counter_examples[geom_pair] = std::move(new_counter_examples);
       if (warned_many_searches) {
-        log()->info(
-            " Finished checking {} against {} after {} counter-example "
-            "searches.",
-            inspector.GetName(pair_w_distance.geomA),
-            inspector.GetName(pair_w_distance.geomB),
-            counter_example_searches_for_this_pair);
+//        log()->info(
+//            " Finished checking {} against {} after {} counter-example "
+//            "searches.",
+//            inspector.GetName(pair_w_distance.geomA),
+//            inspector.GetName(pair_w_distance.geomB),
+//            counter_example_searches_for_this_pair);
       }
       if (!seed_point_requirement) break;
     }
@@ -836,6 +849,7 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
     }
     best_volume = volume;
   }
+  std::cout << "set built" << std::endl;
   return P;
 }
 

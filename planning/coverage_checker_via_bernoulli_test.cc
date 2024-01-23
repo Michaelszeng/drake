@@ -5,6 +5,7 @@
 #endif
 
 #include <thread>
+#include <iostream>
 
 namespace drake {
 namespace planning {
@@ -41,6 +42,7 @@ double CoverageCheckerViaBernoulliTest::GetSampledCoverageFraction(
       }
     }
   }
+  std::cout << "current coverage = " << num_in_sets / num_points_per_check_ << std::endl;
   return num_in_sets / num_points_per_check_;
 }
 

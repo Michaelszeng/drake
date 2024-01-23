@@ -204,14 +204,12 @@ GTEST_TEST(IrisInConfigurationSpaceFromCliqueCover,
 
   IrisFromCliqueCoverOptions options;
 
-  //  ConvexSets obstacles;
-  //  obstacles.emplace_back(VPolytope::MakeBox(Vector2d(.2, .2), Vector2d(1,
-  //  1))); options.iris_options.configuration_obstacles = obstacles;
   options.num_builders = 2;
   options.num_points_per_coverage_check = 100;
   options.num_points_per_visibility_round = 25;
   std::vector<HPolyhedron> sets;
 
+  // TODO(Alexandre.Amice) make this test actually check the cross.
   IrisInConfigurationSpaceFromCliqueCover(*checker, options, &sets);
   EXPECT_GE(ssize(sets), 2);
 }

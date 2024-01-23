@@ -191,8 +191,11 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
     const auto& cls_doc = doc.VisibilityGraphBuilder;
     py::class_<VisibilityGraphBuilder, AdjacencyMatrixBuilderBase>(
         m, "VisibilityGraphBuilder", cls_doc.doc)
-        .def(py::init<std::shared_ptr<CollisionChecker>, bool>(),
-            py::arg("checker"), py::arg("parallelize") = true,
+        .def(py::init([](const std::shared_ptr<CollisionChecker> checker,
+                          Parallelism parallelize) {
+          return VisibilityGraphBuilder(*checker, parallelize);
+        }),
+            py::arg("checker"), py::arg("parallelize") = Parallelism::Max(),
             cls_doc.ctor.doc);
   }
 
@@ -365,6 +368,17 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
         },
         py::arg("obstacles"), py::arg("domain"), py::arg("options"),
         py::arg("sets"), doc.IrisFromCliqueCover.doc);
+
+    m.def(
+        "IrisInConfigurationSpaceFromCliqueCover",
+        [](const CollisionChecker& checker,
+            const IrisFromCliqueCoverOptions& options,
+            std::vector<HPolyhedron> sets) {
+          IrisInConfigurationSpaceFromCliqueCover(checker, options, &sets);
+          return sets;
+        },
+        py::arg("checker"), py::arg("options"), py::arg("sets"),
+        doc.IrisInConfigurationSpaceFromCliqueCover.doc);
   }
 }  // DefinePlanningIrisFromCliqueCover
 }  // namespace internal
