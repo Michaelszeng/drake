@@ -27,7 +27,7 @@ double CoverageCheckerViaBernoulliTest::GetSampledCoverageFraction(
       point_sampler_->SamplePoints(num_points_per_check_);
   // Leave this count as a double since we will use it to perform division
   // later.
-  std::atomic<double> num_in_sets{0};
+  std::atomic<int> num_in_sets{0};
   const int max_concurrency{
       std::max(static_cast<int>(std::thread::hardware_concurrency()), 1)};
   const int num_threads{num_threads_ > 0 ? num_threads_ : max_concurrency};
@@ -43,7 +43,7 @@ double CoverageCheckerViaBernoulliTest::GetSampledCoverageFraction(
     }
   }
   std::cout << "current coverage = " << num_in_sets / num_points_per_check_ << std::endl;
-  return num_in_sets / num_points_per_check_;
+  return static_cast<double>(num_in_sets.load()) / num_points_per_check_;
 }
 
 bool CoverageCheckerViaBernoulliTest::DoCheckCoverage(
