@@ -1,7 +1,10 @@
+#include "drake/bindings/pydrake/common/cpp_template_pybind.h"
+#include "drake/bindings/pydrake/common/wrap_function.h"
 #include "drake/bindings/pydrake/documentation_pybind.h"
+#include "drake/bindings/pydrake/geometry/optimization_pybind.h"
 #include "drake/bindings/pydrake/pydrake_pybind.h"
-#include "drake/planning/graph_algorithms/max_clique_solver_base.h"
-#include "drake/planning/iris/iris_from_clique_cover.h"
+#include "drake/geometry/optimization/hyperrectangle.h"
+#include "drake/planning/iris_from_clique_cover.h"
 
 namespace drake {
 namespace pydrake {
@@ -15,6 +18,16 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
   py::class_<IrisFromCliqueCoverOptions>(
       m, "IrisFromCliqueCoverOptions", cls_doc.doc)
       .def(py::init<>())
+      // A Python specific constructor to allow the clique cover solver to be
+      // set.
+      .def(py::init([](std::unique_ptr<
+                        planning::graph_algorithms::MaxCliqueSolverBase>
+                            solver) {
+        IrisFromCliqueCoverOptions ret{};
+        ret.max_clique_solver = std::move(solver);
+        return ret;
+      }),
+          py::arg("solver"))
       .def_readwrite("iris_options", &IrisFromCliqueCoverOptions::iris_options,
           cls_doc.iris_options.doc)
       .def_readwrite("coverage_termination_threshold",
@@ -26,37 +39,44 @@ void DefinePlanningIrisFromCliqueCover(py::module m) {
       .def_readwrite("num_points_per_coverage_check",
           &IrisFromCliqueCoverOptions::num_points_per_coverage_check,
           cls_doc.num_points_per_coverage_check.doc)
-      .def_readwrite("parallelism", &IrisFromCliqueCoverOptions::parallelism,
-          cls_doc.parallelism.doc)
+      .def_readwrite("num_coverage_checkers",
+          &IrisFromCliqueCoverOptions::num_coverage_checkers,
+          cls_doc.num_coverage_checkers.doc)
       .def_readwrite("minimum_clique_size",
           &IrisFromCliqueCoverOptions::minimum_clique_size,
           cls_doc.minimum_clique_size.doc)
       .def_readwrite("num_points_per_visibility_round",
           &IrisFromCliqueCoverOptions::num_points_per_visibility_round,
           cls_doc.num_points_per_visibility_round.doc)
-      .def_readwrite("rank_tol_for_minimum_volume_circumscribed_ellipsoid",
-          &IrisFromCliqueCoverOptions::
-              rank_tol_for_minimum_volume_circumscribed_ellipsoid,
-          cls_doc.rank_tol_for_minimum_volume_circumscribed_ellipsoid.doc)
+      .def_property_readonly(
+          "max_clique_solver",
+          [](const IrisFromCliqueCoverOptions& self) {
+            return self.max_clique_solver.get();
+          },
+          py_rvp::reference_internal)
+      .def_readwrite("num_builders", &IrisFromCliqueCoverOptions::num_builders,
+          cls_doc.num_builders.doc)
+      .def_readwrite("rank_tol_for_lowner_john_ellipse",
+          &IrisFromCliqueCoverOptions::rank_tol_for_lowner_john_ellipse,
+          cls_doc.rank_tol_for_lowner_john_ellipse.doc)
       .def_readwrite("point_in_set_tol",
           &IrisFromCliqueCoverOptions::point_in_set_tol,
-          cls_doc.point_in_set_tol.doc);
+          cls_doc.point_in_set_tol.doc)
+      .def_readwrite("visibility_graph_parallelism",
+          &IrisFromCliqueCoverOptions::visibility_graph_parallelism,
+          cls_doc.visibility_graph_parallelism.doc);
 
   m.def(
       "IrisInConfigurationSpaceFromCliqueCover",
       [](const CollisionChecker& checker,
           const IrisFromCliqueCoverOptions& options, RandomGenerator generator,
-          std::vector<geometry::optimization::HPolyhedron> sets,
-          const planning::graph_algorithms::MaxCliqueSolverBase*
-              max_clique_solver) {
+          std::vector<geometry::optimization::HPolyhedron> sets) {
         IrisInConfigurationSpaceFromCliqueCover(
-            checker, options, &generator, &sets, max_clique_solver);
+            checker, options, &generator, &sets);
         return sets;
       },
       py::arg("checker"), py::arg("options"), py::arg("generator"),
-      py::arg("sets"), py::arg("max_clique_solver") = nullptr,
-      py::call_guard<py::gil_scoped_release>(),
-      doc.IrisInConfigurationSpaceFromCliqueCover.doc);
+      py::arg("sets"), doc.IrisInConfigurationSpaceFromCliqueCover.doc);
 }  // DefinePlanningIrisFromCliqueCover
 }  // namespace internal
 }  // namespace pydrake
