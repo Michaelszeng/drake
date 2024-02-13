@@ -221,7 +221,7 @@ probabilistically "certified" by restarting the nonlinear optimization from
 random initial seeds inside the candidate IRIS region until it fails to find a
 collision in `options.num_collision_infeasible_samples` consecutive attempts.
 
-This method constructs a single Iris region in the configuration space of
+This method construct a single IRIS region in the configuration space of
 @p plant. @see planning::IrisInConfigurationSpaceFromCliqueCover for a method to
 automatically cover the configuration space with multiple Iris regions.
 
