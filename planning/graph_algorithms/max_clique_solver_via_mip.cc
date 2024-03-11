@@ -5,6 +5,7 @@
 
 #include "drake/common/ssize.h"
 #include "drake/solvers/choose_best_solver.h"
+#include "drake/common/text_logging.h"
 
 namespace drake {
 namespace planning {

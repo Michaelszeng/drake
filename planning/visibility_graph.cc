@@ -105,12 +105,38 @@ class EdgesIterator {
   bool upper_triangle_{false};
 };
 
+bool CheckEdgeCollisionFreeWithConfigurationObstacles(
+    const CollisionChecker& checker, const Eigen::VectorXd& q1, 
+    const Eigen::VectorXd& q2, const ConvexSets* configuration_obstacles) 
+    const {
+  const double distance = checker.ComputeConfigurationDistance(q1, q2);
+  const int num_steps = static_cast<int>(std::max(1.0, std::ceil(distance / 
+      checker.edge_step_size())));
+  for (int step = 0; step < num_steps; ++step) {
+    const double ratio =
+        static_cast<double>(step) / static_cast<double>(num_steps);
+    const Eigen::VectorXd qinterp =
+        checker.InterpolateBetweenConfigurations(q1, q2, ratio);
+    if (!checker.CheckConfigCollisionFree(model_context, qinterp) || 
+        (configuration_obstacles != nullptr && 
+        std::any_of(iris_options.configuration_obstacles.begin(), 
+            iris_options.configuration_obstacles.end(), 
+            [&](const auto& configuration_obstacle){ 
+              return configuration_obstacle->PointInSet(qinterp);
+            }))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 Eigen::SparseMatrix<bool> VisibilityGraph(
     const CollisionChecker& checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points,
-    const Parallelism parallelize) {
+    const Parallelism parallelize,
+    const ConvexSets* configuration_obstacles = nullptr) {
   DRAKE_THROW_UNLESS(checker.plant().num_positions() == points.rows());
 
   const int num_points = points.cols();
@@ -127,8 +153,23 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
   std::vector<uint8_t> points_free(num_points, 0x00);
 
   const auto point_check_work = [&](const int thread_num, const int64_t i) {
-    points_free[i] = static_cast<uint8_t>(
-        checker.CheckConfigCollisionFree(points.col(i), thread_num));
+    // First, check collision against context obstacles using `checker`
+    bool is_collision_free = checker.CheckConfigCollisionFree(points.col(i), 
+                                                              thread_num);
+    
+    // If point is collision-free, then check against configuration obstacles
+    if (is_collision_free && configuration_obstacles != nullptr) {
+      for (int obstacle : *configuration_obstacles) {
+        if (obstacle.distance_to(points.col(i)) < 
+            configuration_space_margin) {
+          is_collision_free = false;
+          break;
+        }
+      }
+    }
+
+    // Set the value in points_free based on the checks
+    points_free[i] = static_cast<uint8_t>(is_collision_free);
   };
 
   StaticParallelForIndexLoop(DegreeOfParallelism(num_threads_to_use), 0,
@@ -145,8 +186,8 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
       edges[i].push_back(i);
       for (int j = i + 1; j < num_points; ++j) {
         if (points_free[j] > 0 &&
-            checker.CheckEdgeCollisionFree(points.col(i), points.col(j),
-                                           thread_num)) {
+            CheckEdgeCollisionFreeWithConfigurationObstacles(checker, 
+                points.col(i), points.col(j), configuration_obstacles)) {
           edges[i].push_back(j);
         }
       }
