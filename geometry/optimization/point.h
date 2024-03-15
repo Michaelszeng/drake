@@ -87,6 +87,14 @@ class Point final : public ConvexSet {
 
   double DoCalcVolume() const final { return 0.0; }
 
+  std::pair<std::vector<std::optional<double>>, Eigen::MatrixXd>
+  DoProjectionShortcut(
+      const Eigen::Ref<const Eigen::MatrixXd>& points) const final;
+
+  // Implement support shapes for the ShapeReifier interface.
+  using ShapeReifier::ImplementGeometry;
+  void ImplementGeometry(const Sphere& sphere, void* data) final;
+
   Eigen::VectorXd x_;
 };
 
