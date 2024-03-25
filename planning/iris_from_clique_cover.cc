@@ -374,8 +374,7 @@ double ApproximatelyComputeCoverage(
 // configuration space obstacles. Returns true if collision free, false if in 
 // collision.
 bool CheckConfigCollisionFreeWithConfigurationObstacles(
-    const Eigen::VectorXd& q,
-    const CollisionChecker& checker,
+    const Eigen::VectorXd& q, const CollisionChecker& checker,
     const ConvexSets& configuration_obstacles,
     const float configuration_space_margin) {
   // First check if collision-free with obstacles in context
@@ -396,8 +395,7 @@ bool CheckConfigCollisionFreeWithConfigurationObstacles(
 
 bool CheckEdgeCollisionFreeWithConfigurationObstacles(
     const CollisionChecker& checker, const Eigen::VectorXd& q1, 
-    const Eigen::VectorXd& q2, const ConvexSets* configuration_obstacles) 
-    const {
+    const Eigen::VectorXd& q2, const ConvexSets* configuration_obstacles) {
   const double distance = checker.ComputeConfigurationDistance(q1, q2);
   const int num_steps = static_cast<int>(std::max(1.0, std::ceil(distance / 
       checker.edge_step_size())));

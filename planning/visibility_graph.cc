@@ -104,42 +104,29 @@ class EdgesIterator {
   int inner_idx_{0};
   bool upper_triangle_{false};
 };
-
-bool CheckEdgeCollisionFreeWithConfigurationObstacles(
-    const CollisionChecker& checker, const Eigen::VectorXd& q1, 
-    const Eigen::VectorXd& q2, const ConvexSets* configuration_obstacles) 
-    const {
-  const double distance = checker.ComputeConfigurationDistance(q1, q2);
-  const int num_steps = static_cast<int>(std::max(1.0, std::ceil(distance / 
-      checker.edge_step_size())));
-  for (int step = 0; step < num_steps; ++step) {
-    const double ratio =
-        static_cast<double>(step) / static_cast<double>(num_steps);
-    const Eigen::VectorXd qinterp =
-        checker.InterpolateBetweenConfigurations(q1, q2, ratio);
-    if (!checker.CheckConfigCollisionFree(model_context, qinterp) || 
-        (configuration_obstacles != nullptr && 
-        std::any_of(iris_options.configuration_obstacles.begin(), 
-            iris_options.configuration_obstacles.end(), 
-            [&](const auto& configuration_obstacle){ 
-              return configuration_obstacle->PointInSet(qinterp);
-            }))) {
-      return false;
-    }
-  }
-  return true;
-}
-
 }  // namespace
 
-Eigen::SparseMatrix<bool> VisibilityGraph(
+
+Eigen::SparseMatrix<bool> VisibilityGraphHelper(
+    std::function<void(const int, const int64_t, 
+        const Eigen::Ref<const Eigen::MatrixXd>&, 
+        std::vector<uint8_t>*)> point_check_work,
+    std::function<void(const int, const int64_t, 
+        const Eigen::Ref<const Eigen::MatrixXd>&, 
+        std::vector<uint8_t>*, const int, 
+        std::vector<std::vector<int>>*)> edge_check_work,
     const CollisionChecker& checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points,
-    const Parallelism parallelize,
-    const ConvexSets* configuration_obstacles = nullptr) {
+    const Parallelism parallelize) {
   DRAKE_THROW_UNLESS(checker.plant().num_positions() == points.rows());
 
   const int num_points = points.cols();
+
+  // Choose std::vector as a thread-safe data structure for the parallel
+  // evaluations.
+  std::vector<uint8_t> points_free(num_points, 0x00);
+  std::vector<std::vector<int>> edges(num_points);
+
   const int num_threads_to_use =
       checker.SupportsParallelChecking()
           ? std::min(parallelize.num_threads(),
@@ -148,54 +135,23 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
   drake::log()->debug("Generating VisibilityGraph using {} threads",
                       num_threads_to_use);
 
-  // Choose std::vector<uint8_t> as a thread-safe data structure for the
-  // parallel evaluations.
-  std::vector<uint8_t> points_free(num_points, 0x00);
-
-  const auto point_check_work = [&](const int thread_num, const int64_t i) {
-    // First, check collision against context obstacles using `checker`
-    bool is_collision_free = checker.CheckConfigCollisionFree(points.col(i), 
-                                                              thread_num);
-    
-    // If point is collision-free, then check against configuration obstacles
-    if (is_collision_free && configuration_obstacles != nullptr) {
-      for (int obstacle : *configuration_obstacles) {
-        if (obstacle.distance_to(points.col(i)) < 
-            configuration_space_margin) {
-          is_collision_free = false;
-          break;
-        }
-      }
-    }
-
-    // Set the value in points_free based on the checks
-    points_free[i] = static_cast<uint8_t>(is_collision_free);
+  // Redefine point_check_work and edge_check_work with correct params to be
+  // called with StaticParallelForIndexLoop()
+  const auto point_check_work_parallel = [&](const int thread_num, 
+      const int64_t i) {
+    point_check_work(thread_num, i, points, &points_free);
+  };
+  const auto edge_check_work_parallel = [&](const int thread_num, 
+      const int64_t i) {
+    edge_check_work(thread_num, i, points, &points_free, num_points, &edges);
   };
 
   StaticParallelForIndexLoop(DegreeOfParallelism(num_threads_to_use), 0,
-                             num_points, point_check_work,
+                             num_points, point_check_work_parallel,
                              ParallelForBackend::BEST_AVAILABLE);
 
-  // Choose std::vector as a thread-safe data structure for the parallel
-  // evaluations.
-  std::vector<std::vector<int>> edges(num_points);
-
-  const auto edge_check_work = [&](const int thread_num, const int64_t index) {
-    const int i = static_cast<int>(index);
-    if (points_free[i] > 0) {
-      edges[i].push_back(i);
-      for (int j = i + 1; j < num_points; ++j) {
-        if (points_free[j] > 0 &&
-            CheckEdgeCollisionFreeWithConfigurationObstacles(checker, 
-                points.col(i), points.col(j), configuration_obstacles)) {
-          edges[i].push_back(j);
-        }
-      }
-    }
-  };
-
   DynamicParallelForIndexLoop(DegreeOfParallelism(num_threads_to_use), 0,
-                              num_points, edge_check_work,
+                              num_points, edge_check_work_parallel,
                               ParallelForBackend::BEST_AVAILABLE);
 
   // Convert edges into the SparseMatrix format, using a custom iterator to
@@ -204,6 +160,76 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
   EdgesIterator edges_iterator(edges);
   mat.setFromTriplets(edges_iterator.begin(), edges_iterator.end());
   return mat;
+}
+
+
+Eigen::SparseMatrix<bool> VisibilityGraph(
+    const CollisionChecker& checker,
+    const Eigen::Ref<const Eigen::MatrixXd>& points,
+    const Parallelism parallelize,
+    const std::optional<ConvexSets>& configuration_obstacles = std::nullopt) {
+
+  const auto point_check_work = [&](const int thread_num, const int64_t i,
+      const Eigen::Ref<const Eigen::MatrixXd>& points, 
+      std::vector<uint8_t>* points_free) {
+
+    // THIS ONLY NEEDED FOR CLIQUE COVERS VERSION
+    // // First, check collision against context obstacles using `checker`
+    // bool is_collision_free = checker.CheckConfigCollisionFree(points.col(i), 
+    //                                                           thread_num);
+    
+    // // If point is collision-free, then check against configuration obstacles
+    // if (is_collision_free && configuration_obstacles != nullptr) {
+    //   for (int obstacle : *configuration_obstacles) {
+    //     if (obstacle.distance_to(points.col(i)) < 
+    //         configuration_space_margin) {
+    //       is_collision_free = false;
+    //       break;
+    //     }
+    //   }
+    // }
+
+    // // Set the value in points_free based on the checks
+    // points_free[i] = static_cast<uint8_t>(is_collision_free);
+
+    (*points_free)[i] = static_cast<uint8_t>(
+        checker.CheckConfigCollisionFree(points.col(i), thread_num));
+  };
+
+  const auto edge_check_work = [&](const int thread_num, const int64_t i, 
+      const Eigen::Ref<const Eigen::MatrixXd>& points, 
+      std::vector<uint8_t>* points_free, const int num_points, 
+      std::vector<std::vector<int>>* edges) {
+
+    // THIS ONLY NEEDED FOR CLIQUE COVERS VERSION
+    // const int i = static_cast<int>(i);
+    // if (points_free[i] > 0) {
+    //   edges[i].push_back(i);
+    //   for (int j = i + 1; j < num_points; ++j) {
+    //     if (points_free[j] > 0 &&
+    //         CheckEdgeCollisionFreeWithConfigurationObstacles(checker, 
+    //             points.col(i), points.col(j), configuration_obstacles)) {
+    //       edges[i].push_back(j);
+    //     }
+    //   }
+    // }
+
+    const int i = static_cast<int>(i);
+    if ((*points_free)[i] > 0) {
+      (*edges)[i].push_back(i);
+      for (int j = i + 1; j < num_points; ++j) {
+        if ((*points_free)[j] > 0 &&
+            checker.CheckEdgeCollisionFree(points.col(i), points.col(j),
+                                           thread_num)) {
+          (*edges)[i].push_back(j);
+        }
+      }
+    }
+  };
+
+  // Call helper using the lambda functions defined above
+  VisibilityGraphHelper(
+    point_check_work, edge_check_work, checker, points, parallelize);
 }
 
 }  // namespace planning
