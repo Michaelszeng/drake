@@ -108,11 +108,9 @@ class EdgesIterator {
 
 
 Eigen::SparseMatrix<bool> VisibilityGraphHelper(
-    std::function<void(const int, const int64_t, 
-        const Eigen::Ref<const Eigen::MatrixXd>&, 
+    std::function<void(const int, const int64_t,  
         std::vector<uint8_t>*)> point_check_work,
-    std::function<void(const int, const int64_t, 
-        const Eigen::Ref<const Eigen::MatrixXd>&, 
+    std::function<void(const int, const int64_t,  
         std::vector<uint8_t>*, const int, 
         std::vector<std::vector<int>>*)> edge_check_work,
     const CollisionChecker& checker,
@@ -139,11 +137,11 @@ Eigen::SparseMatrix<bool> VisibilityGraphHelper(
   // called with StaticParallelForIndexLoop()
   const auto point_check_work_parallel = [&](const int thread_num, 
       const int64_t i) {
-    point_check_work(thread_num, i, points, &points_free);
+    point_check_work(thread_num, i, &points_free);
   };
   const auto edge_check_work_parallel = [&](const int thread_num, 
       const int64_t i) {
-    edge_check_work(thread_num, i, points, &points_free, num_points, &edges);
+    edge_check_work(thread_num, i, &points_free, num_points, &edges);
   };
 
   StaticParallelForIndexLoop(DegreeOfParallelism(num_threads_to_use), 0,
@@ -166,54 +164,17 @@ Eigen::SparseMatrix<bool> VisibilityGraphHelper(
 Eigen::SparseMatrix<bool> VisibilityGraph(
     const CollisionChecker& checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points,
-    const Parallelism parallelize,
-    const std::optional<ConvexSets>& configuration_obstacles = std::nullopt) {
+    const Parallelism parallelize) {
 
-  const auto point_check_work = [&](const int thread_num, const int64_t i,
-      const Eigen::Ref<const Eigen::MatrixXd>& points, 
-      std::vector<uint8_t>* points_free) {
-
-    // THIS ONLY NEEDED FOR CLIQUE COVERS VERSION
-    // // First, check collision against context obstacles using `checker`
-    // bool is_collision_free = checker.CheckConfigCollisionFree(points.col(i), 
-    //                                                           thread_num);
-    
-    // // If point is collision-free, then check against configuration obstacles
-    // if (is_collision_free && configuration_obstacles != nullptr) {
-    //   for (int obstacle : *configuration_obstacles) {
-    //     if (obstacle.distance_to(points.col(i)) < 
-    //         configuration_space_margin) {
-    //       is_collision_free = false;
-    //       break;
-    //     }
-    //   }
-    // }
-
-    // // Set the value in points_free based on the checks
-    // points_free[i] = static_cast<uint8_t>(is_collision_free);
-
-    (*points_free)[i] = static_cast<uint8_t>(
-        checker.CheckConfigCollisionFree(points.col(i), thread_num));
+  const auto point_check_work = [&](const int thread_num, 
+      const int64_t index, std::vector<uint8_t>* points_free) {
+    (*points_free)[index] = static_cast<uint8_t>(
+        checker.CheckConfigCollisionFree(points.col(index), thread_num));
   };
 
   const auto edge_check_work = [&](const int thread_num, const int64_t i, 
-      const Eigen::Ref<const Eigen::MatrixXd>& points, 
       std::vector<uint8_t>* points_free, const int num_points, 
       std::vector<std::vector<int>>* edges) {
-
-    // THIS ONLY NEEDED FOR CLIQUE COVERS VERSION
-    // const int i = static_cast<int>(i);
-    // if (points_free[i] > 0) {
-    //   edges[i].push_back(i);
-    //   for (int j = i + 1; j < num_points; ++j) {
-    //     if (points_free[j] > 0 &&
-    //         CheckEdgeCollisionFreeWithConfigurationObstacles(checker, 
-    //             points.col(i), points.col(j), configuration_obstacles)) {
-    //       edges[i].push_back(j);
-    //     }
-    //   }
-    // }
-
     const int i = static_cast<int>(i);
     if ((*points_free)[i] > 0) {
       (*edges)[i].push_back(i);
@@ -228,7 +189,7 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
   };
 
   // Call helper using the lambda functions defined above
-  VisibilityGraphHelper(
+  return VisibilityGraphHelper(
     point_check_work, edge_check_work, checker, points, parallelize);
 }
 

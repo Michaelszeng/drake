@@ -11,22 +11,15 @@
 #include <thread>
 #include <utility>
 
-#include <common_robotics_utilities/parallelism.hpp>
-
 #include "drake/common/ssize.h"
 #include "drake/geometry/optimization/iris.h"
 #include "drake/planning/collision_checker.h"
 #include "drake/planning/scene_graph_collision_checker.h"
 #include "drake/planning/visibility_graph.h"
-#include "drake/solvers/gurobi_solver.h"
-#include "drake/solvers/mosek_solver.h"
-#include "drake/solvers/solver_options.h"
 
 namespace drake {
 namespace planning {
-using common_robotics_utilities::parallelism::DegreeOfParallelism;
-using common_robotics_utilities::parallelism::ParallelForBackend;
-using common_robotics_utilities::parallelism::StaticParallelForIndexLoop;
+
 using Eigen::SparseMatrix;
 using geometry::Meshcat;
 using geometry::Rgba;
@@ -40,11 +33,11 @@ using math::RigidTransform;
 
 namespace {
 // A very simple implementation of a thread-safe asynchronous queue for use when
-// exactly one thread fills the queue while one or more threads empty the
+// exactly one threads fills the queue while one (or more) threads empties the
 // queue.
 //
 // When the producer pushes onto the queue, they automatically signal to the
-// consumers that a job is available. When the producer thread is done filling
+// consumers that a job is available. When the producer threads is done filling
 // the queue, they signal this via the done_filling() method. i.e the producer
 // code should be similar to:
 // while(true) {
@@ -52,7 +45,7 @@ namespace {
 //   if(done) {
 //      queue.done_filling();
 //      break;
-//   }
+// }
 // }
 //
 // Consumers threads should be implemented as:
@@ -60,11 +53,9 @@ namespace {
 // while(queue.pop(elt)) {
 //  do_work(...)
 // }
-// The loop will exit when:
-//   * The producer thread has both signalled that no more jobs are being
-//   created.
-//   * The underlying queue is completely empty.
-// Note that this loop will not poll the pop method unnecessarily, as if
+// The loop will exit when the producer thread has both signalled that no
+// more jobs are being created, and when the underlying queue is completely
+// empty. Note that this loop will not poll the pop method unnecessarily, as if
 // the queue is filling, pop will wait until a job is available.
 template <typename T>
 class AsyncQueue {
@@ -74,9 +65,9 @@ class AsyncQueue {
   AsyncQueue() : queue_{}, mutex_{}, condition_{}, still_filling_{true} {};
 
   void push(const T& value) {
-    DRAKE_THROW_UNLESS(still_filling_);
     std::unique_lock<std::mutex> lock(mutex_);
     queue_.push(value);
+    lock.unlock();
     condition_.notify_one();
   }
 
@@ -103,15 +94,11 @@ class AsyncQueue {
     condition_.notify_all();
   }
 
-  int size() const {
-    // We need to lock the mutex since the queue size is not necessarily atomic.
-    std::unique_lock<std::mutex> lock(mutex_);
-    return queue_.size();
-  }
+  int size() { return queue_.size(); }
 
  private:
   std::queue<T> queue_;
-  mutable std::mutex mutex_;
+  std::mutex mutex_;
   std::condition_variable condition_;
   std::atomic<bool> still_filling_ = true;
 };
@@ -134,27 +121,28 @@ void MakeFalseRowsAndColumns(const VectorX<bool>& mask,
 // Computes the largest clique in the graph represented by @p adjacency_matrix
 // and adds this largest clique to @p computed_cliques. This clique is then
 // removed from the adjacency matrix, and a new maximal clique is computed.
-// This process continues until no clique of size @p minimum_clique can be
+// This process continue until no clique of size @p minimum_clique can be
 // found. At this point, the queue calls done_filling() so that downstream
 // workers know to expect no more cliques.
 //
-// Note: The adjacency matrix will be mutated by this method and will be mostly
+// Note: The adjacency matrix will be mutated by this method and be mostly
 // useless after this method is called.
 void ComputeGreedyTruncatedCliqueCover(
     const int minimum_clique_size,
     const graph_algorithms::MaxCliqueSolverBase& max_clique_solver,
     SparseMatrix<bool>* adjacency_matrix,
     AsyncQueue<VectorX<bool>>* computed_cliques) {
-  int last_clique_size = std::numeric_limits<int>::max();
+  float last_clique_size = std::numeric_limits<float>::infinity();
   int num_cliques = 0;
   int num_points_left = adjacency_matrix->cols();
   const int num_points_original = adjacency_matrix->cols();
+  log()->info("Solving Max Clique Cover with {} points",
+              adjacency_matrix->cols());
   while (last_clique_size > minimum_clique_size &&
-         num_points_left > minimum_clique_size) {
+         adjacency_matrix->nonZeros() > minimum_clique_size) {
     const VectorX<bool> max_clique =
         max_clique_solver.SolveMaxClique(*adjacency_matrix);
     last_clique_size = max_clique.template cast<int>().sum();
-    log()->debug("Last Clique Size = {}", last_clique_size);
     num_points_left -= last_clique_size;
     if (last_clique_size > minimum_clique_size) {
       computed_cliques->push(max_clique);
@@ -165,29 +153,30 @@ void ComputeGreedyTruncatedCliqueCover(
           num_points_left, num_points_original);
     }
   }
-  // This line signals to the IRIS workers that no further cliques will be added
+  // This line signals to the iris workers that no further cliques will be added
   // to the queue. Removing this line will cause an infinite loop.
   computed_cliques->done_filling();
   log()->info(
       "Finished adding cliques. Total of {} clique added. Number of cliques "
-      "left to process = {}",
+      "left to "
+      "process = {}",
       num_cliques, computed_cliques->size());
 }
 
-// Pulls cliques from @p computed_cliques and constructs IRIS regions using the
-// provided IrisOptions, but seeding IRIS with the minimum circumscribed
+// Pulls cliques from @p computed_cliques and constructs Iris regions using the
+// provided Iris options, but seeding Iris with the minimum circumscribed
 // ellipse of the clique. As this method may run in a separate thread, we
-// provide an option to forcefully disable meshcat in IRIS. This must happen as
+// provide an option to forcefully disable meshcat in Iris. This must happen as
 // meshcat cannot be written to outside the main thread.
 std::queue<HPolyhedron> IrisWorker(
     const CollisionChecker& checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points, const int builder_id,
     const IrisFromCliqueCoverOptions& options,
     AsyncQueue<VectorX<bool>>* computed_cliques, bool disable_meshcat = true) {
-  // Copy the IrisOptions as we will change the value of the starting ellipse
+  // Copy the iris options as we will change the value of the starting ellipse
   // in this worker.
   IrisOptions iris_options = options.iris_options;
-  // Disable the IRIS meshcat option in this worker since we cannot write to
+  // Disable the iris meshcat option in this worker since we cannot write to
   // meshcat from a different thread.
   if (disable_meshcat) {
     iris_options.meshcat = nullptr;
@@ -197,7 +186,7 @@ std::queue<HPolyhedron> IrisWorker(
   std::optional<VectorX<bool>> current_clique = computed_cliques->pop();
   while (current_clique.has_value()) {
     const int clique_size = current_clique->template cast<int>().sum();
-    Eigen::MatrixXd clique_points(points.rows(), clique_size);
+    Eigen::MatrixXd clique_points(points.rows(), clique_size);  // N x dim
     int clique_col = 0;
     for (int i = 0; i < ssize(current_clique.value()); ++i) {
       if (current_clique.value()(i)) {
@@ -205,11 +194,35 @@ std::queue<HPolyhedron> IrisWorker(
         ++clique_col;
       }
     }
+
+    // Check collision of clique points
+    bool collision = false;
+    for (int i = 0; i < clique_points.cols(); ++i) {
+        Eigen::VectorXd pt = clique_points.col(i);
+
+        // Check collision in context
+        if (!checker.CheckConfigCollisionFree(pt)) {
+          log()->info("clique point in collision with context obstacle: {}", pt);
+          collision = true;
+        }
+
+        // Check collision with configuration obtacles
+        const int nc = static_cast<int>(iris_options.configuration_obstacles.size());
+        for (int j = 0; j < nc; ++j) {
+          if (iris_options.configuration_obstacles[j]->PointInSet(pt)) {
+            log()->info("clique point {} is in configuration obstacle {}", pt, j);
+            collision = true;
+          }
+        }
+    }
+    if (!collision) {
+      log()->info("all clique points out of collision.");
+    }
+
     Hyperellipsoid clique_ellipse;
     try {
       clique_ellipse = Hyperellipsoid::MinimumVolumeCircumscribedEllipsoid(
-          clique_points,
-          options.rank_tol_for_minimum_volume_circumscribed_ellipsoid);
+          clique_points, options.rank_tol_for_lowner_john_ellipse);
     } catch (const std::runtime_error& e) {
       log()->info(
           "Iris builder thread {} failed to compute an ellipse for a clique.",
@@ -217,9 +230,23 @@ std::queue<HPolyhedron> IrisWorker(
       continue;
     }
 
-    if (checker.CheckConfigCollisionFree(clique_ellipse.center())) {
+    // clique_ellipse center is out of collision, including with configuration 
+    // obstacles
+    // if (checker.CheckConfigCollisionFree(clique_ellipse.center()) &&
+    //     !std::any_of(iris_options.configuration_obstacles.begin(), 
+    //                  iris_options.configuration_obstacles.end(), 
+    //                  [&](const auto& configuration_obstacle){ 
+    //                     return configuration_obstacle->PointInSet(
+    //                     clique_ellipse.center()); 
+    //                  })) {
+    if (checker.CheckConfigCollisionFreeWithConfigurationObstacles(
+            clique_ellipse.center(), 
+            iris_options.configuration_obstacles, 
+            iris_options.configuration_space_margin)) {
       iris_options.starting_ellipse = clique_ellipse;
+      log()->info("clique_ellipse center is NOT in collision.");
     } else {
+      log()->info("clique_ellipse center is in collision: {}", clique_ellipse.center());
       // Find the nearest clique member to the center that is not in collision.
       Eigen::Index nearest_point_col;
       (clique_points - clique_ellipse.center())
@@ -227,15 +254,39 @@ std::queue<HPolyhedron> IrisWorker(
           .norm()
           .minCoeff(&nearest_point_col);
       Eigen::VectorXd center = clique_points.col(nearest_point_col);
+      log()->info("new starting ellipse center: {}", center);
+      log()->info("New starting ellipse center is in collision with context obstacle: {}", !checker.CheckConfigCollisionFree(center));
+      log()->info("New starting ellipse center is in collision with configuration_obstacle: {}", std::any_of(iris_options.configuration_obstacles.begin(), 
+                                                                                                              iris_options.configuration_obstacles.end(), 
+                                                                                                              [&](const auto& configuration_obstacle){ 
+                                                                                                                  return configuration_obstacle->PointInSet(
+                                                                                                                  center); 
+                                                                                                              }));
+      log()->info("new starting ellipse A: {}", clique_ellipse.A());
+      
       iris_options.starting_ellipse =
-          Hyperellipsoid(center, clique_ellipse.A());
+        Hyperellipsoid(clique_ellipse.A(), center);
     }
+    log()->info("clique_ellipse center: {}", iris_options.starting_ellipse->center());
+    log()->info("average of all clique points: {}", clique_points.rowwise().mean());
+
+    // Check collision of clique_ellipse center and average of all clique points with configuration obtacles
+    const int nc = static_cast<int>(iris_options.configuration_obstacles.size());
+    for (int j = 0; j < nc; ++j) {
+      if (iris_options.configuration_obstacles[j]->PointInSet(iris_options.starting_ellipse->center())) {
+        log()->info("clique center {} is in configuration obstacle {}", iris_options.starting_ellipse->center(), j);
+      }
+      if (iris_options.configuration_obstacles[j]->PointInSet(clique_points.rowwise().mean())) {
+        log()->info("average of all clique points is in configuration obstacle.");
+      }
+    } 
+
     checker.UpdatePositions(iris_options.starting_ellipse->center(),
                             builder_id);
     log()->debug("Iris builder thread {} is constructing a set.", builder_id);
     ret.emplace(IrisInConfigurationSpace(
         checker.plant(), checker.plant_context(builder_id), iris_options));
-    log()->debug("Iris builder thread {} has constructed a set.", builder_id);
+    log()->debug("Iris builder thread  {} has constructed a set.", builder_id);
 
     current_clique = computed_cliques->pop();
   }
@@ -274,7 +325,8 @@ int ComputeMaxNumberOfCliquesInGreedyCliqueCover(
 // that the MCMC sampling can continue. See @HPolyhedron for details.
 double ApproximatelyComputeCoverage(
     const HPolyhedron& domain, const std::vector<HPolyhedron>& sets,
-    const CollisionChecker& checker, const int num_samples,
+    const CollisionChecker& checker, const ConvexSets& configuration_obstacles,
+    const float configuration_space_margin, const int num_samples,
     const double point_in_set_tol, const Parallelism& parallelism,
     RandomGenerator* generator, Eigen::VectorXd* last_polytope_sample) {
   double fraction_covered = 0.0;
@@ -283,71 +335,107 @@ double ApproximatelyComputeCoverage(
     // Fail fast if there is nothing to check.
     return 0.0;
   }
+  // Sample points and ensure they are not in collision
   Eigen::MatrixXd sampled_points(domain.ambient_dimension(), num_samples);
   for (int i = 0; i < sampled_points.cols(); ++i) {
     do {
       *last_polytope_sample =
           domain.UniformSample(generator, *last_polytope_sample);
-    } while (!checker.CheckConfigCollisionFree(*last_polytope_sample));
+    } while (!checker.CheckConfigCollisionFreeWithConfigurationObstacles(
+                *last_polytope_sample,
+                configuration_obstacles,
+                configuration_space_margin
+                ));
     sampled_points.col(i) = *last_polytope_sample;
   }
 
   std::atomic<int> num_in_sets{0};
-  const auto point_in_cover = [&sets, &num_in_sets, &sampled_points,
-                               &point_in_set_tol](const int thread_num,
-                                                  const int i) {
-    unused(thread_num);
+#if !defined(_OPENMP)
+  unused(parallelism);
+#endif
+#if defined(_OPENMP)
+#pragma omp parallel for num_threads(parallelism.num_threads()) schedule(static)
+#endif
+  for (int i = 0; i < sampled_points.cols(); ++i) {
     for (const auto& set : sets) {
       if (set.PointInSet(sampled_points.col(i), point_in_set_tol)) {
         num_in_sets.fetch_add(1);
         break;
       }
     }
-  };
-  StaticParallelForIndexLoop(DegreeOfParallelism(parallelism.num_threads()), 0,
-                             sampled_points.cols(), point_in_cover,
-                             ParallelForBackend::BEST_AVAILABLE);
-
+  }
   fraction_covered = static_cast<double>(num_in_sets.load()) / num_samples;
 
   log()->info("Current Fraction of Domain Covered = {}", fraction_covered);
   return fraction_covered;
 }
 
-std::unique_ptr<planning::graph_algorithms::MaxCliqueSolverBase>
-MakeDefaultMaxCliqueSolver() {
-  solvers::SolverOptions options;
-  // Quit after finding 25 solutions.
-  const int kFeasibleSolutionLimit = 25;
-  // Quit at a 5% optimality gap
-  const double kRelOptGap = 0.05;
-  options.SetOption(solvers::MosekSolver().id(),
-                    "MSK_IPAR_MIO_MAX_NUM_SOLUTIONS", kFeasibleSolutionLimit);
-  options.SetOption(solvers::MosekSolver().id(), "MSK_DPAR_MIO_TOL_REL_GAP",
-                    kRelOptGap);
-  options.SetOption(solvers::GurobiSolver().id(), "SolutionLimit",
-                    kFeasibleSolutionLimit);
-  options.SetOption(solvers::GurobiSolver().id(), "MIPGap", kRelOptGap);
-  return std::unique_ptr<planning::graph_algorithms::MaxCliqueSolverBase>(
-      new planning::graph_algorithms::MaxCliqueSolverViaMip(std::nullopt,
-                                                            options));
+// Checks a configuration for collision against context obstacles and
+// configuration space obstacles. Returns true if collision free, false if in 
+// collision.
+bool CheckConfigCollisionFreeWithConfigurationObstacles(
+    const Eigen::VectorXd& q, const CollisionChecker& checker,
+    const ConvexSets& configuration_obstacles,
+    const float configuration_space_margin) {
+  // First check if collision-free with obstacles in context
+  if (!checker.CheckConfigCollisionFree(q, context_number)) {
+    return false;
+  }
+
+  // Then, check collision with each configuration obstacle
+  for (int obstacle : configuration_obstacles) {
+    if (obstacle.distance_to(q) < configuration_space_margin) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
+
+bool CheckEdgeCollisionFreeWithConfigurationObstacles(
+    const CollisionChecker& checker, const Eigen::VectorXd& q1, 
+    const Eigen::VectorXd& q2, const ConvexSets* configuration_obstacles) {
+  const double distance = checker.ComputeConfigurationDistance(q1, q2);
+  const int num_steps = static_cast<int>(std::max(1.0, std::ceil(distance / 
+      checker.edge_step_size())));
+  for (int step = 0; step < num_steps; ++step) {
+    const double ratio =
+        static_cast<double>(step) / static_cast<double>(num_steps);
+    const Eigen::VectorXd qinterp =
+        checker.InterpolateBetweenConfigurations(q1, q2, ratio);
+    if (!checker.CheckConfigCollisionFree(model_context, qinterp) || 
+        (configuration_obstacles != nullptr && 
+        std::any_of(iris_options.configuration_obstacles.begin(), 
+            iris_options.configuration_obstacles.end(), 
+            [&](const auto& configuration_obstacle){ 
+              return configuration_obstacle->PointInSet(qinterp);
+            }))) {
+      return false;
+    }
+  }
+  return true;
+}
 }  // namespace
 
 void IrisInConfigurationSpaceFromCliqueCover(
     const CollisionChecker& checker, const IrisFromCliqueCoverOptions& options,
-    RandomGenerator* generator, std::vector<HPolyhedron>* sets,
-    const planning::graph_algorithms::MaxCliqueSolverBase*
-        max_clique_solver_ptr) {
+    RandomGenerator* generator, std::vector<HPolyhedron>* sets) {
   DRAKE_THROW_UNLESS(options.coverage_termination_threshold > 0);
   DRAKE_THROW_UNLESS(options.iteration_limit > 0);
 
-  const HPolyhedron domain = options.iris_options.bounding_region.value_or(
+  // Set checker padding to prevent clique points (which, in the case where the
+  // clique's inscribed ellipse center is in collision, one of the clique points
+  // is used as the ellipse center) from getting too close to obstacles and
+  // causing an error
+  checker.SetPaddingAllRobotEnvironmentPairs(
+      options.iris_options.configuration_space_margin);
+  checker.SetPaddingAllRobotRobotPairs(
+      options.iris_options.configuration_space_margin);
+
+  const HPolyhedron& domain = options.iris_options.bounding_region.value_or(
       HPolyhedron::MakeBox(checker.plant().GetPositionLowerLimits(),
                            checker.plant().GetPositionUpperLimits()));
-  DRAKE_THROW_UNLESS(domain.ambient_dimension() ==
-                     checker.plant().num_positions());
   Eigen::VectorXd last_polytope_sample = domain.UniformSample(generator);
 
   // Override options which are set too aggressively.
@@ -364,38 +452,27 @@ void IrisInConfigurationSpaceFromCliqueCover(
                max_collision_checker_parallelism.num_threads());
 
   int num_iterations = 0;
-
-  std::vector<HPolyhedron> visibility_graph_sets;
-
-  std::unique_ptr<planning::graph_algorithms::MaxCliqueSolverBase>
-      default_max_clique_solver;
-  // Only construct the default solver if max_clique_solver is null.
-  if (max_clique_solver_ptr == nullptr) {
-    default_max_clique_solver = MakeDefaultMaxCliqueSolver();
-  }
-
-  const planning::graph_algorithms::MaxCliqueSolverBase* max_clique_solver =
-      max_clique_solver_ptr == nullptr ? default_max_clique_solver.get()
-                                       : max_clique_solver_ptr;
-  auto approximate_coverage = [&]() {
-    return ApproximatelyComputeCoverage(
-        domain, *sets, checker, options.num_points_per_coverage_check,
-        options.point_in_set_tol, options.parallelism, generator,
-        &last_polytope_sample);
-  };
-  while (approximate_coverage() < options.coverage_termination_threshold &&
+  while (ApproximatelyComputeCoverage(
+             domain, *sets, checker, 
+             options.iris_options.configuration_obstacles, 
+             options.iris_options.configuration_space_margin,
+             options.num_points_per_coverage_check,
+             options.point_in_set_tol, options.parallelism, generator,
+             &last_polytope_sample) < options.coverage_termination_threshold &&
          num_iterations < options.iteration_limit) {
-    log()->info("IrisFromCliqueCover Iteration {}/{}", num_iterations + 1,
-                options.iteration_limit);
     Eigen::MatrixXd points(domain.ambient_dimension(),
                            num_points_per_visibility_round);
+    // Sample all points for cliques (and ensure they are not in collision)
     for (int i = 0; i < points.cols(); ++i) {
       do {
         last_polytope_sample =
             domain.UniformSample(generator, last_polytope_sample);
       } while (
           // While the last polytope sample is in collision.
-          !checker.CheckConfigCollisionFree(last_polytope_sample) ||
+          !checker.CheckConfigCollisionFreeWithConfigurationObstacles(
+              last_polytope_sample,
+              options.iris_options.configuration_obstacles,
+              options.iris_options.configuration_space_margin) ||
           // While the last polytope sample is in any of the sets.
           std::any_of(sets->begin(), sets->end(),
                       [&last_polytope_sample](const HPolyhedron& set) -> bool {
@@ -418,6 +495,50 @@ void IrisInConfigurationSpaceFromCliqueCover(
       }
     }
 
+
+    // Define custom lambda functions for VisibilityGraph's collision checking
+    const auto point_check_work = [&](const int thread_num, 
+        const int64_t index, std::vector<uint8_t>* points_free) {
+
+      // First, check collision against context obstacles using `checker`
+      bool is_collision_free = checker.CheckConfigCollisionFree(
+          points.col(index), thread_num);
+      
+      // If point is collision-free, then check against configuration obstacles
+      if (is_collision_free && 
+          options.iris_options.configuration_obstacles.size() > 0) {
+        for (int obstacle : options.iris_options.configuration_obstacles) {
+          if (obstacle.distance_to(points.col(index)) < 
+              configuration_space_margin) {
+            is_collision_free = false;
+            break;
+          }
+        }
+      }
+
+      // Set the value in points_free based on the checks
+      (*points_free)[index] = static_cast<uint8_t>(is_collision_free);
+    };
+
+    const auto edge_check_work = [&](const int thread_num, const int64_t i, 
+        std::vector<uint8_t>* points_free, const int num_points, 
+        std::vector<std::vector<int>>* edges) {
+      const int i = static_cast<int>(i);
+      if ((*points_free)[i] > 0) {
+        (*edges)[i].push_back(i);
+        // Check edges from point i to all other non-collision points in graph
+        for (int j = i + 1; j < num_points; ++j) {
+          if ((*points_free)[j] > 0 &&
+              CheckEdgeCollisionFreeWithConfigurationObstacles(checker, 
+                  points.col(i), points.col(j), 
+                  options.iris_options.configuration_obstacles)) {
+            (*edges)[i].push_back(j);
+          }
+        }
+      }
+    };
+
+
     Eigen::SparseMatrix<bool> visibility_graph =
         VisibilityGraph(checker, points, max_collision_checker_parallelism);
     // Reserve more space for the newly built sets. Typically, we won't get
@@ -435,22 +556,16 @@ void IrisInConfigurationSpaceFromCliqueCover(
     AsyncQueue<VectorX<bool>> computed_cliques;
     if (options.parallelism.num_threads() == 1) {
       ComputeGreedyTruncatedCliqueCover(options.minimum_clique_size,
-                                        *max_clique_solver, &visibility_graph,
-                                        &computed_cliques);
-      std::queue<HPolyhedron> new_set_queue =
-          IrisWorker(checker, points, 0, options, &computed_cliques,
-                     false /* No need to disable meshcat */);
-      while (!new_set_queue.empty()) {
-        sets->push_back(std::move(new_set_queue.front()));
-        new_set_queue.pop();
-        ++num_new_sets;
-      }
+                                        *options.max_clique_solver,
+                                        &visibility_graph, &computed_cliques);
+      IrisWorker(checker, points, 0, options, &computed_cliques,
+                 false /* No need to disable meshcat */);
     } else {
       // Compute truncated clique cover.
-      std::future<void> clique_future{
-          std::async(std::launch::async, ComputeGreedyTruncatedCliqueCover,
-                     options.minimum_clique_size, std::ref(*max_clique_solver),
-                     &visibility_graph, &computed_cliques)};
+      std::future<void> clique_future{std::async(
+          std::launch::async, ComputeGreedyTruncatedCliqueCover,
+          options.minimum_clique_size, std::ref(*options.max_clique_solver),
+          &visibility_graph, &computed_cliques)};
 
       // We will use one thread to build cliques and the remaining threads to
       // build IRIS regions. If this number is 0, then this function will end up
@@ -464,7 +579,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
             std::async(std::launch::async, IrisWorker, std::ref(checker),
                        points, i, std::ref(options), &computed_cliques,
                        // NOLINTNEXTLINE
-                       true /* Disable meshcat since IRIS runs outside the main thread */));
+                       true /* Disable meshcat since Iris runs outside the main thread */));
       }
       // The clique cover and the convex sets are computed asynchronously. Wait
       // for all the threads to join and then add the new sets to built sets.
