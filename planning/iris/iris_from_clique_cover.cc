@@ -545,6 +545,48 @@ void IrisInConfigurationSpaceFromCliqueCover(
       }
     }
 
+    // Define custom lambda functions for VisibilityGraph's collision checking
+    const auto point_check_work = [&](const int thread_num, 
+        const int64_t index, std::vector<uint8_t>* points_free) {
+
+      // First, check collision against context obstacles using `checker`
+      bool is_collision_free = checker.CheckConfigCollisionFree(
+          points.col(index), thread_num);
+
+      // If point is collision-free, then check against configuration obstacles
+      if (is_collision_free && 
+          options.iris_options.configuration_obstacles.size() > 0) {
+        for (int obstacle : options.iris_options.configuration_obstacles) {
+          if (obstacle.distance_to(points.col(index)) < 
+              configuration_space_margin) {
+            is_collision_free = false;
+            break;
+          }
+        }
+      }
+
+      // Set the value in points_free based on the checks
+      (*points_free)[index] = static_cast<uint8_t>(is_collision_free);
+    };
+
+    const auto edge_check_work = [&](const int thread_num, const int64_t i, 
+        const std::vector<uint8_t>& points_free, const int num_points, 
+        std::vector<std::vector<int>>* edges) {
+      const int i = static_cast<int>(i);
+      if (points_free[i] > 0) {
+        (*edges)[i].push_back(i);
+        // Check edges from point i to all other non-collision points in graph
+        for (int j = i + 1; j < num_points; ++j) {
+          if (points_free[j] > 0 &&
+              CheckEdgeCollisionFreeWithConfigurationObstacles(checker, 
+                  points.col(i), points.col(j), 
+                  options.iris_options.configuration_obstacles)) {
+            (*edges)[i].push_back(j);
+          }
+        }
+      }
+    };
+
     Eigen::SparseMatrix<bool> visibility_graph =
         VisibilityGraph(checker, points, max_collision_checker_parallelism);
     // Reserve more space for the newly built sets. Typically, we won't get
