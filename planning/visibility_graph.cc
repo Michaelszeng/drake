@@ -107,7 +107,7 @@ class EdgesIterator {
 }  // namespace
 
 
-Eigen::SparseMatrix<bool> VisibilityGraphHelper(
+Eigen::SparseMatrix<bool> ConfigurableVisibilityGraph(
     std::function<void(const int, const int64_t,  
         std::vector<uint8_t>*)> point_check_work,
     std::function<void(const int, const int64_t,  
@@ -189,7 +189,7 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
   };
 
   // Call helper using the lambda functions defined above
-  return VisibilityGraphHelper(
+  return ConfigurableVisibilityGraph(
     point_check_work, edge_check_work, checker, points, parallelize);
 }
 

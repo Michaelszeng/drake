@@ -36,5 +36,27 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
     const Eigen::Ref<const Eigen::MatrixXd>& points,
     Parallelism parallelize = Parallelism::Max());
 
+/** A more flexible variant of the function VisibilityGraph() above. This method 
+also computes the "visibility graph" given a number of sampled points, but 
+accepts addtional lambda function parameters that allow you to define custom 
+methods for collision checking (for example, if you want to check collisions 
+with user-defined configuration obstacles, as the CollisionChecker is only aware
+of context obstacles).
+
+If `parallelize` specifies more than one thread, then the
+CollisionCheckerParams::distance_and_interpolation_provider for `checker` must
+be implemented in C++, either by providing the C++ implementation directly
+directly or by using the default provider.
+
+@returns the adjacency matrix, A(i,j) == true iff points.col(i) is visible from
+points.col(j). A is always symmetric.
+
+@pre points.rows() == total number of positions in the collision checker plant.
+*/
+Eigen::SparseMatrix<bool> ConfigurableVisibilityGraph(
+    const CollisionChecker& checker,
+    const Eigen::Ref<const Eigen::MatrixXd>& points,
+    Parallelism parallelize = Parallelism::Max());
+
 }  // namespace planning
 }  // namespace drake
