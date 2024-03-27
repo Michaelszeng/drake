@@ -197,7 +197,7 @@ std::queue<HPolyhedron> IrisWorker(
   std::optional<VectorX<bool>> current_clique = computed_cliques->pop();
   while (current_clique.has_value()) {
     const int clique_size = current_clique->template cast<int>().sum();
-    Eigen::MatrixXd clique_points(points.rows(), clique_size);
+    Eigen::MatrixXd clique_points(points.rows(), clique_size);   // N x dim
     int clique_col = 0;
     for (int i = 0; i < ssize(current_clique.value()); ++i) {
       if (current_clique.value()(i)) {
@@ -205,6 +205,32 @@ std::queue<HPolyhedron> IrisWorker(
         ++clique_col;
       }
     }
+
+    // Check collision of clique points
+    // PURELY FOR LOGGING/DEBUGGING
+    bool collision = false;
+    for (int i = 0; i < clique_points.cols(); ++i) {
+        Eigen::VectorXd pt = clique_points.col(i);
+
+        // Check collision in context
+        if (!checker.CheckConfigCollisionFree(pt)) {
+          log()->info("clique point in collision with context obstacle: {}", pt);
+          collision = true;
+        }
+
+        // Check collision with configuration obtacles
+        const int nc = static_cast<int>(iris_options.configuration_obstacles.size());
+        for (int j = 0; j < nc; ++j) {
+          if (iris_options.configuration_obstacles[j]->PointInSet(pt)) {
+            log()->info("clique point {} is in configuration obstacle {}", pt, j);
+            collision = true;
+          }
+        }
+    }
+    if (!collision) {
+      log()->info("all clique points out of collision.");
+    }
+
     Hyperellipsoid clique_ellipse;
     try {
       clique_ellipse = Hyperellipsoid::MinimumVolumeCircumscribedEllipsoid(
@@ -217,9 +243,13 @@ std::queue<HPolyhedron> IrisWorker(
       continue;
     }
 
-    if (checker.CheckConfigCollisionFree(clique_ellipse.center())) {
+    if (checker.CheckConfigCollisionFreeWithConfigurationObstacles(
+        clique_ellipse.center(), iris_options.configuration_obstacles, 
+        iris_options.configuration_space_margin)) {
       iris_options.starting_ellipse = clique_ellipse;
+      log()->info("clique_ellipse center is NOT in collision.");
     } else {
+      log()->info("clique_ellipse center is in collision: {}", clique_ellipse.center());
       // Find the nearest clique member to the center that is not in collision.
       Eigen::Index nearest_point_col;
       (clique_points - clique_ellipse.center())
@@ -227,9 +257,36 @@ std::queue<HPolyhedron> IrisWorker(
           .norm()
           .minCoeff(&nearest_point_col);
       Eigen::VectorXd center = clique_points.col(nearest_point_col);
+
+      log()->info("new starting ellipse center: {}", center);
+      log()->info("New starting ellipse center is in collision with context obstacle: {}", !checker.CheckConfigCollisionFree(center));
+      log()->info("New starting ellipse center is in collision with configuration_obstacle: {}", std::any_of(iris_options.configuration_obstacles.begin(), 
+                                                                                                              iris_options.configuration_obstacles.end(), 
+                                                                                                              [&](const auto& configuration_obstacle){ 
+                                                                                                                  return configuration_obstacle->PointInSet(
+                                                                                                                  center); 
+                                                                                                              }));
+      log()->info("new starting ellipse A: {}", clique_ellipse.A());
+
       iris_options.starting_ellipse =
           Hyperellipsoid(center, clique_ellipse.A());
     }
+
+    log()->info("clique_ellipse center: {}", iris_options.starting_ellipse->center());
+    log()->info("average of all clique points: {}", clique_points.rowwise().mean());
+
+    // Check collision of clique_ellipse center and average of all clique points with configuration obtacles
+    // PURELY FOR LOGGING/DEBUGGING
+    const int nc = static_cast<int>(iris_options.configuration_obstacles.size());
+    for (int j = 0; j < nc; ++j) {
+      if (iris_options.configuration_obstacles[j]->PointInSet(iris_options.starting_ellipse->center())) {
+        log()->info("clique center {} is in configuration obstacle {}", iris_options.starting_ellipse->center(), j);
+      }
+      if (iris_options.configuration_obstacles[j]->PointInSet(clique_points.rowwise().mean())) {
+        log()->info("average of all clique points is in configuration obstacle.");
+      }
+    } 
+
     checker.UpdatePositions(iris_options.starting_ellipse->center(),
                             builder_id);
     log()->debug("Iris builder thread {} is constructing a set.", builder_id);
@@ -274,7 +331,8 @@ int ComputeMaxNumberOfCliquesInGreedyCliqueCover(
 // that the MCMC sampling can continue. See @HPolyhedron for details.
 double ApproximatelyComputeCoverage(
     const HPolyhedron& domain, const std::vector<HPolyhedron>& sets,
-    const CollisionChecker& checker, const int num_samples,
+    const CollisionChecker& checker, const ConvexSets& configuration_obstacles,
+    const float configuration_space_margin, const int num_samples,
     const double point_in_set_tol, const Parallelism& parallelism,
     RandomGenerator* generator, Eigen::VectorXd* last_polytope_sample) {
   double fraction_covered = 0.0;
@@ -283,12 +341,15 @@ double ApproximatelyComputeCoverage(
     // Fail fast if there is nothing to check.
     return 0.0;
   }
+  // Sample points and ensure they are not in collision
   Eigen::MatrixXd sampled_points(domain.ambient_dimension(), num_samples);
   for (int i = 0; i < sampled_points.cols(); ++i) {
     do {
       *last_polytope_sample =
           domain.UniformSample(generator, *last_polytope_sample);
-    } while (!checker.CheckConfigCollisionFree(*last_polytope_sample));
+    } while (!checker.CheckConfigCollisionFreeWithConfigurationObstacles(
+        *last_polytope_sample, configuration_obstacles,
+        configuration_space_margin));
     sampled_points.col(i) = *last_polytope_sample;
   }
 
@@ -333,6 +394,56 @@ MakeDefaultMaxCliqueSolver() {
                                                             options));
 }
 
+// Checks a configuration for collision against context obstacles and
+// configuration space obstacles (configuration_space_margin is used as a
+// minimum distance from configuration_obstacles). Returns true if collision 
+// free, false if in collision.
+bool CheckConfigCollisionFreeWithConfigurationObstacles(
+    const Eigen::VectorXd& q, const CollisionChecker& checker,
+    const ConvexSets& configuration_obstacles,
+    const float configuration_space_margin) {
+  // First check if collision-free with obstacles in context
+  if (!checker.CheckConfigCollisionFree(q, context_number)) {
+    return false;
+  }
+
+  // Then, check collision with each configuration obstacle
+  for (int obstacle : configuration_obstacles) {
+    if (obstacle.distance_to(q) < configuration_space_margin) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Checks an edge between two configuration points for collision against context 
+// obstacles and configuration space obstacles. Returns true if collision free, 
+// false if in collision.
+bool CheckEdgeCollisionFreeWithConfigurationObstacles(
+    const CollisionChecker& checker, const Eigen::VectorXd& q1, 
+    const Eigen::VectorXd& q2, const ConvexSets* configuration_obstacles) {
+  const double distance = checker.ComputeConfigurationDistance(q1, q2);
+  const int num_steps = static_cast<int>(std::max(1.0, std::ceil(distance / 
+      checker.edge_step_size())));
+  for (int step = 0; step < num_steps; ++step) {
+    const double ratio =
+        static_cast<double>(step) / static_cast<double>(num_steps);
+    const Eigen::VectorXd qinterp =
+        checker.InterpolateBetweenConfigurations(q1, q2, ratio);
+    if (!checker.CheckConfigCollisionFree(model_context, qinterp) || 
+        (configuration_obstacles != nullptr && 
+        std::any_of(iris_options.configuration_obstacles.begin(), 
+            iris_options.configuration_obstacles.end(), 
+            [&](const auto& configuration_obstacle){ 
+              return configuration_obstacle->PointInSet(qinterp);
+            }))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 void IrisInConfigurationSpaceFromCliqueCover(
@@ -342,6 +453,15 @@ void IrisInConfigurationSpaceFromCliqueCover(
         max_clique_solver_ptr) {
   DRAKE_THROW_UNLESS(options.coverage_termination_threshold > 0);
   DRAKE_THROW_UNLESS(options.iteration_limit > 0);
+
+  // Set checker padding to prevent clique points (which, in the case where the
+  // clique's inscribed ellipse center is in collision, one of the clique points
+  // is used as the ellipse center) from getting too close to obstacles and
+  // causing an error
+  checker.SetPaddingAllRobotEnvironmentPairs(
+      options.iris_options.configuration_space_margin);
+  checker.SetPaddingAllRobotRobotPairs(
+      options.iris_options.configuration_space_margin);
 
   const HPolyhedron domain = options.iris_options.bounding_region.value_or(
       HPolyhedron::MakeBox(checker.plant().GetPositionLowerLimits(),
@@ -379,7 +499,10 @@ void IrisInConfigurationSpaceFromCliqueCover(
                                        : max_clique_solver_ptr;
   auto approximate_coverage = [&]() {
     return ApproximatelyComputeCoverage(
-        domain, *sets, checker, options.num_points_per_coverage_check,
+        domain, *sets, checker, 
+        options.iris_options.configuration_obstacles, 
+        options.iris_options.configuration_space_margin,
+        options.num_points_per_coverage_check,
         options.point_in_set_tol, options.parallelism, generator,
         &last_polytope_sample);
   };
@@ -389,13 +512,17 @@ void IrisInConfigurationSpaceFromCliqueCover(
                 options.iteration_limit);
     Eigen::MatrixXd points(domain.ambient_dimension(),
                            num_points_per_visibility_round);
+    // Sample all points for cliques (and ensure they are not in collision)
     for (int i = 0; i < points.cols(); ++i) {
       do {
         last_polytope_sample =
             domain.UniformSample(generator, last_polytope_sample);
       } while (
           // While the last polytope sample is in collision.
-          !checker.CheckConfigCollisionFree(last_polytope_sample) ||
+          !checker.CheckConfigCollisionFreeWithConfigurationObstacles(
+              last_polytope_sample,
+              options.iris_options.configuration_obstacles,
+              options.iris_options.configuration_space_margin) ||
           // While the last polytope sample is in any of the sets.
           std::any_of(sets->begin(), sets->end(),
                       [&last_polytope_sample](const HPolyhedron& set) -> bool {
