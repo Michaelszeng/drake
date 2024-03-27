@@ -589,8 +589,10 @@ void IrisInConfigurationSpaceFromCliqueCover(
       }
     };
 
-    Eigen::SparseMatrix<bool> visibility_graph =
-        VisibilityGraph(checker, points, max_collision_checker_parallelism);
+    Eigen::SparseMatrix<bool> visibility_graph = ConfigurableVisibilityGraph(
+        point_check_work, edge_check_work, checker, points, 
+        max_collision_checker_parallelism);
+        
     // Reserve more space for the newly built sets. Typically, we won't get
     // this worst case number of new cliques, so we only reserve half of the
     // worst case.
