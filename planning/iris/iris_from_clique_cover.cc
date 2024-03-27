@@ -175,6 +175,57 @@ void ComputeGreedyTruncatedCliqueCover(
       num_cliques, computed_cliques->size());
 }
 
+// Checks a configuration for collision against context obstacles and
+// configuration space obstacles (configuration_space_margin is used as a
+// minimum distance from configuration_obstacles). Returns true if collision 
+// free, false if in collision.
+bool CheckConfigCollisionFreeWithConfigurationObstacles(
+    const Eigen::VectorXd& q, const CollisionChecker& checker,
+    const ConvexSets& configuration_obstacles,
+    const float configuration_space_margin) {
+  // First check if collision-free with obstacles in context
+  if (!checker.CheckConfigCollisionFree(q)) {
+    return false;
+  }
+
+  // Then, check collision with each configuration obstacle
+  for (const auto& obstacle : configuration_obstacles) {
+    if (obstacle.distance_to(q) < configuration_space_margin) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Checks an edge between two configuration points for collision against context 
+// obstacles and configuration space obstacles. Returns true if collision free, 
+// false if in collision.
+bool CheckEdgeCollisionFreeWithConfigurationObstacles(
+    const CollisionChecker& checker, const Eigen::VectorXd& q1, 
+    const Eigen::VectorXd& q2, const ConvexSets& configuration_obstacles, 
+    const int thread_num) {
+  const double distance = checker.ComputeConfigurationDistance(q1, q2);
+  const int num_steps = static_cast<int>(std::max(1.0, std::ceil(distance / 
+      checker.edge_step_size())));
+  for (int step = 0; step < num_steps; ++step) {
+    const double ratio =
+        static_cast<double>(step) / static_cast<double>(num_steps);
+    const Eigen::VectorXd qinterp =
+        checker.InterpolateBetweenConfigurations(q1, q2, ratio);
+    if (!checker.CheckConfigCollisionFree(qinterp, thread_num) || 
+        (configuration_obstacles.size() > 0 && 
+        std::any_of(configuration_obstacles.begin(), 
+            configuration_obstacles.end(), 
+            [&](const auto& configuration_obstacle){ 
+              return configuration_obstacle->PointInSet(qinterp);
+            }))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Pulls cliques from @p computed_cliques and constructs IRIS regions using the
 // provided IrisOptions, but seeding IRIS with the minimum circumscribed
 // ellipse of the clique. As this method may run in a separate thread, we
@@ -245,7 +296,7 @@ std::queue<HPolyhedron> IrisWorker(
     }
 
     if (CheckConfigCollisionFreeWithConfigurationObstacles(
-        clique_ellipse.center(), iris_options.configuration_obstacles, 
+        clique_ellipse.center(), checker, iris_options.configuration_obstacles, 
         iris_options.configuration_space_margin)) {
       iris_options.starting_ellipse = clique_ellipse;
       log()->info("clique_ellipse center is NOT in collision.");
@@ -349,7 +400,7 @@ double ApproximatelyComputeCoverage(
       *last_polytope_sample =
           domain.UniformSample(generator, *last_polytope_sample);
     } while (!CheckConfigCollisionFreeWithConfigurationObstacles(
-        *last_polytope_sample, configuration_obstacles,
+        *last_polytope_sample, checker, configuration_obstacles,
         configuration_space_margin));
     sampled_points.col(i) = *last_polytope_sample;
   }
@@ -393,57 +444,6 @@ MakeDefaultMaxCliqueSolver() {
   return std::unique_ptr<planning::graph_algorithms::MaxCliqueSolverBase>(
       new planning::graph_algorithms::MaxCliqueSolverViaMip(std::nullopt,
                                                             options));
-}
-
-// Checks a configuration for collision against context obstacles and
-// configuration space obstacles (configuration_space_margin is used as a
-// minimum distance from configuration_obstacles). Returns true if collision 
-// free, false if in collision.
-bool CheckConfigCollisionFreeWithConfigurationObstacles(
-    const Eigen::VectorXd& q, const CollisionChecker& checker,
-    const ConvexSets& configuration_obstacles,
-    const float configuration_space_margin) {
-  // First check if collision-free with obstacles in context
-  if (!checker.CheckConfigCollisionFree(q)) {
-    return false;
-  }
-
-  // Then, check collision with each configuration obstacle
-  for (int obstacle : configuration_obstacles) {
-    if (obstacle.distance_to(q) < configuration_space_margin) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-// Checks an edge between two configuration points for collision against context 
-// obstacles and configuration space obstacles. Returns true if collision free, 
-// false if in collision.
-bool CheckEdgeCollisionFreeWithConfigurationObstacles(
-    const CollisionChecker& checker, const Eigen::VectorXd& q1, 
-    const Eigen::VectorXd& q2, const ConvexSets& configuration_obstacles, 
-    const int thread_num) {
-  const double distance = checker.ComputeConfigurationDistance(q1, q2);
-  const int num_steps = static_cast<int>(std::max(1.0, std::ceil(distance / 
-      checker.edge_step_size())));
-  for (int step = 0; step < num_steps; ++step) {
-    const double ratio =
-        static_cast<double>(step) / static_cast<double>(num_steps);
-    const Eigen::VectorXd qinterp =
-        checker.InterpolateBetweenConfigurations(q1, q2, ratio);
-    if (!checker.CheckConfigCollisionFree(qinterp, thread_num) || 
-        (configuration_obstacles.size() > 0 && 
-        std::any_of(configuration_obstacles.begin(), 
-            configuration_obstacles.end(), 
-            [&](const auto& configuration_obstacle){ 
-              return configuration_obstacle->PointInSet(qinterp);
-            }))) {
-      return false;
-    }
-  }
-  return true;
 }
 
 }  // namespace
@@ -501,7 +501,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
                                        : max_clique_solver_ptr;
   auto approximate_coverage = [&]() {
     return ApproximatelyComputeCoverage(
-        domain, sets, checker, options.iris_options.configuration_obstacles, 
+        domain, *sets, checker, options.iris_options.configuration_obstacles, 
         options.iris_options.configuration_space_margin,
         options.num_points_per_coverage_check,
         options.point_in_set_tol, options.parallelism, generator,
@@ -521,7 +521,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
       } while (
           // While the last polytope sample is in collision.
           !CheckConfigCollisionFreeWithConfigurationObstacles(
-              last_polytope_sample,
+              last_polytope_sample, checker,
               options.iris_options.configuration_obstacles,
               options.iris_options.configuration_space_margin) ||
           // While the last polytope sample is in any of the sets.
@@ -557,7 +557,8 @@ void IrisInConfigurationSpaceFromCliqueCover(
       // If point is collision-free, then check against configuration obstacles
       if (is_collision_free && 
           options.iris_options.configuration_obstacles.size() > 0) {
-        for (int obstacle : options.iris_options.configuration_obstacles) {
+        for (const auto& obstacle : 
+            options.iris_options.configuration_obstacles) {
           if (obstacle.distance_to(points.col(index)) < 
               options.iris_options.configuration_space_margin) {
             is_collision_free = false;
