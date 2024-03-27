@@ -457,7 +457,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
   // Set checker padding to prevent clique points (which, in the case where the
   // clique's inscribed ellipse center is in collision, one of the clique points
   // is used as the ellipse center) from getting too close to obstacles and
-  // causing an error
+  // causing iris to throw an error
   checker.SetPaddingAllRobotEnvironmentPairs(
       options.iris_options.configuration_space_margin);
   checker.SetPaddingAllRobotRobotPairs(
