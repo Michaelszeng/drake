@@ -173,10 +173,10 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
         checker.CheckConfigCollisionFree(points.col(i), thread_num));
   };
 
-  const auto edge_check_work = [&](const int thread_num, const int64_t i, 
+  const auto edge_check_work = [&](const int thread_num, const int64_t index, 
       const std::vector<uint8_t>& points_free, const int num_points, 
       std::vector<std::vector<int>>* edges) {
-    const int i = static_cast<int>(i);
+    const int i = static_cast<int>(index);
     if (points_free[i] > 0) {
       (*edges)[i].push_back(i);
       for (int j = i + 1; j < num_points; ++j) {
