@@ -43,6 +43,24 @@ methods for collision checking (for example, if you want to check collisions
 with user-defined configuration obstacles, as the CollisionChecker is only aware
 of context obstacles).
 
+ConfigurableVisibilityGraph will call `point_check_work` once for each point in 
+`points` to determine whether that point is in collision. It takes parameters 
+`const int thread_num`, `const int64_t i`, and 
+`std::vector<uint8_t>* points_free`. `points_free[i]` is passed by pointer and 
+should be modified to contain a binary value 1 if the point is collision-free, 
+or a 0 otherwise. `thread_num` can be used for parallelization (i.e. as a 
+`context_number` for CollisionChecker).
+
+Similarly, ConfigurableVisibilityGraph calls `edge_check_work` once for each
+point in `points_free`. `edge_check_work` takes parameters 
+`const int thread_num`, `const int64_t i`, 
+`const std::vector<uint8_t>& points_free`, `const int num_points`, and 
+`std::vector<std::vector<int>>* edges`. It should check collisions along each 
+edge from `points_free[i]` to `points_free[j]` for all `j` with
+`points_free[j] = 1`, and append the value `j` to `edges[i]` if that edge is
+collision-free. `thread_num` can be used for parallelization (i.e. as a 
+`context_number` for CollisionChecker).
+
 If `parallelize` specifies more than one thread, then the
 CollisionCheckerParams::distance_and_interpolation_provider for `checker` must
 be implemented in C++, either by providing the C++ implementation directly
@@ -54,9 +72,14 @@ points.col(j). A is always symmetric.
 @pre points.rows() == total number of positions in the collision checker plant.
 */
 Eigen::SparseMatrix<bool> ConfigurableVisibilityGraph(
+    std::function<void(const int, const int64_t,  
+        std::vector<uint8_t>*)> point_check_work,
+    std::function<void(const int, const int64_t,  
+        const std::vector<uint8_t>&, const int, 
+        std::vector<std::vector<int>>*)> edge_check_work,
     const CollisionChecker& checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points,
-    Parallelism parallelize = Parallelism::Max());
+    const Parallelism parallelize);
 
 }  // namespace planning
 }  // namespace drake
