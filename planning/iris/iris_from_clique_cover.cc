@@ -13,6 +13,7 @@
 
 #include <common_robotics_utilities/parallelism.hpp>
 
+#include "drake/common/fmt_eigen.h"
 #include "drake/common/ssize.h"
 #include "drake/geometry/optimization/iris.h"
 #include "drake/planning/collision_checker.h"
@@ -35,6 +36,7 @@ using geometry::optimization::HPolyhedron;
 using geometry::optimization::Hyperellipsoid;
 using geometry::optimization::IrisInConfigurationSpace;
 using geometry::optimization::IrisOptions;
+using geometry::optimization::ConvexSet;
 using geometry::optimization::ConvexSets;
 using graph_algorithms::MaxCliqueSolverBase;
 using math::RigidTransform;
@@ -189,8 +191,22 @@ bool CheckConfigCollisionFreeWithConfigurationObstacles(
   }
 
   // Then, check collision with each configuration obstacle
-  for (const auto& obstacle : configuration_obstacles) {
-    if (obstacle.distance_to(q) < configuration_space_margin) {
+  for (const auto& obstacle_ptr : configuration_obstacles) {
+    const ConvexSet& obstacle = *obstacle_ptr;
+
+    // Calculate distance from q to obstacle
+    std::optional<std::pair<std::vector<double>, Eigen::MatrixXd>> 
+        projection_result = obstacle.Projection(q);
+
+    double distance_q_to_obstacle = 0;
+    if (projection_result.has_value()) {
+      const std::vector<double>& distances = projection_result->first;
+      distance_q_to_obstacle = distances[0];
+    } else {  // if Projection fails, assume there is a collision
+      return false;
+    }
+
+    if (distance_q_to_obstacle < configuration_space_margin) {
       return false;
     }
   }
@@ -266,7 +282,7 @@ std::queue<HPolyhedron> IrisWorker(
 
         // Check collision in context
         if (!checker.CheckConfigCollisionFree(pt)) {
-          log()->info("clique point in collision with context obstacle: {}", pt);
+          log()->info("clique point in collision with context obstacle: {}", fmt_eigen(pt));
           collision = true;
         }
 
@@ -274,7 +290,7 @@ std::queue<HPolyhedron> IrisWorker(
         const int nc = static_cast<int>(iris_options.configuration_obstacles.size());
         for (int j = 0; j < nc; ++j) {
           if (iris_options.configuration_obstacles[j]->PointInSet(pt)) {
-            log()->info("clique point {} is in configuration obstacle {}", pt, j);
+            log()->info("clique point {} is in configuration obstacle {}", fmt_eigen(pt), j);
             collision = true;
           }
         }
@@ -301,7 +317,7 @@ std::queue<HPolyhedron> IrisWorker(
       iris_options.starting_ellipse = clique_ellipse;
       log()->info("clique_ellipse center is NOT in collision.");
     } else {
-      log()->info("clique_ellipse center is in collision: {}", clique_ellipse.center());
+      log()->info("clique_ellipse center is in collision: {}", fmt_eigen(clique_ellipse.center()));
       // Find the nearest clique member to the center that is not in collision.
       Eigen::Index nearest_point_col;
       (clique_points - clique_ellipse.center())
@@ -310,7 +326,7 @@ std::queue<HPolyhedron> IrisWorker(
           .minCoeff(&nearest_point_col);
       Eigen::VectorXd center = clique_points.col(nearest_point_col);
 
-      log()->info("new starting ellipse center: {}", center);
+      log()->info("new starting ellipse center: {}", fmt_eigen(center));
       log()->info("New starting ellipse center is in collision with context obstacle: {}", !checker.CheckConfigCollisionFree(center));
       log()->info("New starting ellipse center is in collision with configuration_obstacle: {}", std::any_of(iris_options.configuration_obstacles.begin(), 
                                                                                                               iris_options.configuration_obstacles.end(), 
@@ -318,21 +334,21 @@ std::queue<HPolyhedron> IrisWorker(
                                                                                                                   return configuration_obstacle->PointInSet(
                                                                                                                   center); 
                                                                                                               }));
-      log()->info("new starting ellipse A: {}", clique_ellipse.A());
+      log()->info("new starting ellipse A: {}", fmt_eigen(clique_ellipse.A()));
 
       iris_options.starting_ellipse =
           Hyperellipsoid(center, clique_ellipse.A());
     }
 
-    log()->info("clique_ellipse center: {}", iris_options.starting_ellipse->center());
-    log()->info("average of all clique points: {}", clique_points.rowwise().mean());
+    log()->info("clique_ellipse center: {}", fmt_eigen(iris_options.starting_ellipse->center()));
+    log()->info("average of all clique points: {}", fmt_eigen(clique_points.rowwise().mean()));
 
     // Check collision of clique_ellipse center and average of all clique points with configuration obtacles
     // PURELY FOR LOGGING/DEBUGGING
     const int nc = static_cast<int>(iris_options.configuration_obstacles.size());
     for (int j = 0; j < nc; ++j) {
       if (iris_options.configuration_obstacles[j]->PointInSet(iris_options.starting_ellipse->center())) {
-        log()->info("clique center {} is in configuration obstacle {}", iris_options.starting_ellipse->center(), j);
+        log()->info("clique center {} is in configuration obstacle {}", fmt_eigen(iris_options.starting_ellipse->center()), j);
       }
       if (iris_options.configuration_obstacles[j]->PointInSet(clique_points.rowwise().mean())) {
         log()->info("average of all clique points is in configuration obstacle.");
@@ -449,7 +465,7 @@ MakeDefaultMaxCliqueSolver() {
 }  // namespace
 
 void IrisInConfigurationSpaceFromCliqueCover(
-    CollisionChecker& checker, const IrisFromCliqueCoverOptions& options,
+    const CollisionChecker& checker, const IrisFromCliqueCoverOptions& options,
     RandomGenerator* generator, std::vector<HPolyhedron>* sets,
     const planning::graph_algorithms::MaxCliqueSolverBase*
         max_clique_solver_ptr) {
@@ -460,10 +476,10 @@ void IrisInConfigurationSpaceFromCliqueCover(
   // clique's inscribed ellipse center is in collision, one of the clique points
   // is used as the ellipse center) from getting too close to obstacles and
   // causing iris to throw an error
-  checker.SetPaddingAllRobotEnvironmentPairs(
-      options.iris_options.configuration_space_margin);
-  checker.SetPaddingAllRobotRobotPairs(
-      options.iris_options.configuration_space_margin);
+  // checker.SetPaddingAllRobotEnvironmentPairs(
+  //     options.iris_options.configuration_space_margin);
+  // checker.SetPaddingAllRobotRobotPairs(
+  //     options.iris_options.configuration_space_margin);
 
   const HPolyhedron domain = options.iris_options.bounding_region.value_or(
       HPolyhedron::MakeBox(checker.plant().GetPositionLowerLimits(),
@@ -557,9 +573,24 @@ void IrisInConfigurationSpaceFromCliqueCover(
       // If point is collision-free, then check against configuration obstacles
       if (is_collision_free && 
           options.iris_options.configuration_obstacles.size() > 0) {
-        for (const auto& obstacle : 
+        for (const auto& obstacle_ptr : 
             options.iris_options.configuration_obstacles) {
-          if (obstacle.distance_to(points.col(index)) < 
+          const ConvexSet& obstacle = *obstacle_ptr;
+
+          // Calculate distance from point to obstacle
+          std::optional<std::pair<std::vector<double>, Eigen::MatrixXd>> 
+              projection_result = obstacle.Projection(points.col(index));
+
+          double distance_point_to_obstacle = 0;
+          if (projection_result.has_value()) {
+            const std::vector<double>& distances = projection_result->first;
+            distance_point_to_obstacle = distances[0];
+          } else {  // if Projection fails, assume there is a collision
+            is_collision_free = false;
+            break;
+          }
+
+          if (distance_point_to_obstacle < 
               options.iris_options.configuration_space_margin) {
             is_collision_free = false;
             break;
