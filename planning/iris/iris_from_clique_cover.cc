@@ -566,7 +566,7 @@ bool CheckEdgeCollisionFreeWithConfigurationObstacles(
 }  // namespace
 
 void IrisInConfigurationSpaceFromCliqueCover(
-    const CollisionChecker& checker, const IrisFromCliqueCoverOptions& options,
+    CollisionChecker& checker, const IrisFromCliqueCoverOptions& options,
     RandomGenerator* generator, std::vector<HPolyhedron>* sets,
     const planning::graph_algorithms::MaxCliqueSolverBase*
         max_clique_solver_ptr) {
