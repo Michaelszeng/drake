@@ -476,10 +476,10 @@ void IrisInConfigurationSpaceFromCliqueCover(
   // clique's inscribed ellipse center is in collision, one of the clique points
   // is used as the ellipse center) from getting too close to obstacles and
   // causing iris to throw an error
-  // checker.SetPaddingAllRobotEnvironmentPairs(
-  //     options.iris_options.configuration_space_margin);
-  // checker.SetPaddingAllRobotRobotPairs(
-  //     options.iris_options.configuration_space_margin);
+  checker.SetPaddingAllRobotEnvironmentPairs(
+      options.iris_options.configuration_space_margin);
+  checker.SetPaddingAllRobotRobotPairs(
+      options.iris_options.configuration_space_margin);
 
   const HPolyhedron domain = options.iris_options.bounding_region.value_or(
       HPolyhedron::MakeBox(checker.plant().GetPositionLowerLimits(),
