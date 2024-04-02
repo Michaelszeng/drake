@@ -485,28 +485,6 @@ bool CheckTerminate(const IrisOptions& options, const HPolyhedron& P,
 }  // namespace
 
 namespace {
-Eigen::VectorXd SampleFromEllipsoid(const Eigen::MatrixXd& A, RandomGenerator* generator) {
-  // Get eigenvalue decomposition
-  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigensolver(A);
-  Eigen::VectorXd eigenvalues =  eigensolver.eigenvalues();
-  Eigen::MatrixXd P = eigensolver.eigenvectors();
-  Eigen::MatrixXd D = eigenvalues.asDiagonal();
-
-  DRAKE_DEMAND(A.isApprox(P * D * P.transpose())); // TODO(rhjiang) for debugging only
-
-  std::normal_distribution<double> gaussian;
-
-  VectorXd rotated_sample(A.rows());
-  for (int i = 0; i < A.rows(); ++i) {
-    rotated_sample[i] = eigenvalues[i] * gaussian(*generator);
-  }
-  rotated_sample /= rotated_sample.norm();
-  return P * rotated_sample;
-}
-
-}  // namespace
-
-namespace {
 std::pair<Eigen::VectorXd, int> CheckRayPolytopeIntersection(const MultibodyPlant<double>& plant, 
     const Parallelism& parallelism, const planning::CollisionChecker& checker, Context<double>* context, 
     const std::vector<GeometryPairWithDistance>& sorted_pairs, const HPolyhedron& P, 
@@ -560,7 +538,7 @@ std::pair<Eigen::VectorXd, int> CollisionLineSearch(const MultibodyPlant<double>
   // VectorXd collision_configuration(P.ambient_dimension());
   VectorXd collision_configuration = Eigen::VectorXd::Zero(P.ambient_dimension());
   std::vector<Eigen::VectorXd> configs_to_check(1);
-  while (P.PointInSet(center + i * step_size * direction, constraint_tol)) {
+  while (P.PointInSet(center + i * step_size * direction, constraint_tol) && pair_in_collision < 0) {
     const Eigen::VectorXd configuration = center + i * step_size * direction;
     configs_to_check[0] = configuration;
     std::vector<uint8_t> col_free =
@@ -809,6 +787,11 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
   const Parallelism parallelism = Parallelism::Max();
   HPolyhedron P;
 
+  std::vector<Eigen::VectorXd> particles;
+  particles.reserve(options.particle_batch_size);
+  for (int i = 0; i < options.particle_batch_size; ++i) {
+    particles.emplace_back(Eigen::VectorXd::Zero(nq));
+  }
   
   while (true) {
     // for (int i = 0; i < E.center().size(); ++i) {
@@ -871,35 +854,29 @@ HPolyhedron IrisInConfigurationSpace(const MultibodyPlant<double>& plant,
           HPolyhedron(A.topRows(num_constraints), b.head(num_constraints));
       MakeGuessFeasible(P_candidate, &guess);
     }
+    
     int consecutive__sample_failures = 0;
     // for (int i = 0; i < P_candidate.A().rows(); ++i) {
     //   log()->info("Hyperplanes 1: {}x + {}y < {}", P_candidate.A().row(i)(0), P_candidate.A().row(i)(1), P_candidate.b()(i));
     // }
     // loop through more times, going straight to the polytope boundary
     // log()->info("num faces in P_candidate, in while(true): {}", P_candidate.A().rows());
+    int i_particle = std::numeric_limits<int>::max();
     while (consecutive__sample_failures < 2 * options.num_collision_infeasible_samples) {
-      Eigen::VectorXd direction = SampleFromEllipsoid(E.A(), &generator);
+      if (i_particle >= options.particle_batch_size) { // time to sample another batch
+        i_particle = 0;
+        particles.at(0) = P_candidate.UniformSample(&generator);
+        for (int i = 1; i < ssize(particles); ++i) {
+          particles.at(i) = P_candidate.UniformSample(&generator, particles.at(i - 1), 1000);
+        }
+      }
+      Eigen::VectorXd direction = (particles.at(i_particle) - E.center()).normalized();
+      ++ i_particle;
+
       // std::pair<Eigen::VectorXd, int> closest_collision_info = CollisionLineSearch(plant, mutable_context, &query_object_mutable_context, sorted_pairs, P_candidate, E.center(), direction);
       // if consecutive__sample_failures >= options.num_collision_infeasible_samples, in a "final pass"
       std::pair<Eigen::VectorXd, int> closest_collision_info;
       closest_collision_info = CollisionLineSearch(plant, parallelism, checker, mutable_context, sorted_pairs, P_candidate, E.center(), direction, collision_search_step_size);
-
-      // Eigen::VectorXd collision_configuration = closest_collision_info.first;
-      // int collision_pair_index = closest_collision_info.second;
-      // auto pair_iterator = std::next(sorted_pairs.begin(), collision_pair_index);
-      // const auto collision_pair = *pair_iterator;
-
-      if (closest_collision_info.second < 0) { // line search not in collision; try vertex sampling
-        
-        cost.evaluator()->UpdateCoefficients(direction);
-        auto result = Solve(sample_vertices_prog);
-        DRAKE_ASSERT(result.is_success());
-        VectorXd vertex_direction = result.GetSolution(qvar) - E.center();
-        closest_collision_info = CollisionLineSearch(plant, parallelism, checker, mutable_context, sorted_pairs, P_candidate, E.center(), vertex_direction, vertex_direction.norm()/options.vertex_ray_steps);
-        if (closest_collision_info.second >= 0) {
-          // log()->info("found vertex collision...");
-        }
-      }
 
       if (closest_collision_info.second >= 0) { // pair is actually in collision
         // log()->info("solving SNOPT problem {}", direction[0]);
