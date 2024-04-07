@@ -182,11 +182,11 @@ void ComputeGreedyTruncatedCliqueCover(
 // minimum distance from configuration_obstacles). Returns true if collision 
 // free, false if in collision.
 bool CheckConfigCollisionFreeWithConfigurationObstacles(
-    const Eigen::VectorXd& q, const CollisionChecker& checker,
+    const Eigen::VectorXd& q, const CollisionChecker& checker, 
     const ConvexSets& configuration_obstacles,
-    const float configuration_space_margin) {
+    const float configuration_space_margin, const int thread_num=0) {
   // First check if collision-free with obstacles in context
-  if (!checker.CheckConfigCollisionFree(q)) {
+  if (!checker.CheckConfigCollisionFree(q, thread_num)) {
     return false;
   }
 
@@ -313,7 +313,7 @@ std::queue<HPolyhedron> IrisWorker(
 
     if (CheckConfigCollisionFreeWithConfigurationObstacles(
         clique_ellipse.center(), checker, iris_options.configuration_obstacles, 
-        iris_options.configuration_space_margin)) {
+        iris_options.configuration_space_margin, builder_id)) {
       iris_options.starting_ellipse = clique_ellipse;
       log()->info("clique_ellipse center is NOT in collision.");
     } else {
@@ -417,7 +417,7 @@ double ApproximatelyComputeCoverage(
           domain.UniformSample(generator, *last_polytope_sample);
     } while (!CheckConfigCollisionFreeWithConfigurationObstacles(
         *last_polytope_sample, checker, configuration_obstacles,
-        configuration_space_margin));
+        configuration_space_margin, 0));
     sampled_points.col(i) = *last_polytope_sample;
   }
 
@@ -648,7 +648,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
           !CheckConfigCollisionFreeWithConfigurationObstacles(
               last_polytope_sample, checker,
               options.iris_options.configuration_obstacles,
-              options.iris_options.configuration_space_margin) ||
+              options.iris_options.configuration_space_margin, 0) ||
           // While the last polytope sample is in any of the sets.
           std::any_of(sets->begin(), sets->end(),
                       [&last_polytope_sample](const HPolyhedron& set) -> bool {
