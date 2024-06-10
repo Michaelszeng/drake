@@ -184,8 +184,9 @@ void ComputeGreedyTruncatedCliqueCover(
 bool CheckConfigCollisionFreeWithConfigurationObstacles(
     const Eigen::VectorXd& q, const CollisionChecker& checker, 
     const ConvexSets& configuration_obstacles,
-    const float configuration_space_margin, const int thread_num=0) {
-  // First check if collision-free with obstacles in context
+    const double configuration_space_margin, const int thread_num) {
+  // First check if the configuration is collision-free with the obstacles 
+  // defined by the collision checker.
   if (!checker.CheckConfigCollisionFree(q, thread_num)) {
     return false;
   }
@@ -195,18 +196,13 @@ bool CheckConfigCollisionFreeWithConfigurationObstacles(
     const ConvexSet& obstacle = *obstacle_ptr;
 
     // Calculate distance from q to obstacle
-    std::optional<std::pair<std::vector<double>, Eigen::MatrixXd>> 
+    const std::optional<std::pair<std::vector<double>, Eigen::MatrixXd>> 
         projection_result = obstacle.Projection(q);
 
-    double distance_q_to_obstacle = 0;
     if (projection_result.has_value()) {
       const std::vector<double>& distances = projection_result->first;
-      distance_q_to_obstacle = distances[0];
+      return distances[0] < configuration_space_margin;
     } else {  // if Projection fails, assume there is a collision
-      return false;
-    }
-
-    if (distance_q_to_obstacle < configuration_space_margin) {
       return false;
     }
   }
@@ -224,18 +220,17 @@ bool CheckEdgeCollisionFreeWithConfigurationObstacles(
   const double distance = checker.ComputeConfigurationDistance(q1, q2);
   const int num_steps = static_cast<int>(std::max(1.0, std::ceil(distance / 
       checker.edge_step_size())));
-  for (int step = 0; step < num_steps; ++step) {
+  for (int step = 0; step <= num_steps; ++step) {
     const double ratio =
         static_cast<double>(step) / static_cast<double>(num_steps);
     const Eigen::VectorXd qinterp =
         checker.InterpolateBetweenConfigurations(q1, q2, ratio);
     if (!checker.CheckConfigCollisionFree(qinterp, thread_num) || 
-        (configuration_obstacles.size() > 0 && 
         std::any_of(configuration_obstacles.begin(), 
             configuration_obstacles.end(), 
-            [&](const auto& configuration_obstacle){ 
+            [&](const auto& configuration_obstacle) { 
               return configuration_obstacle->PointInSet(qinterp);
-            }))) {
+            })) {
       return false;
     }
   }
@@ -400,7 +395,7 @@ int ComputeMaxNumberOfCliquesInGreedyCliqueCover(
 double ApproximatelyComputeCoverage(
     const HPolyhedron& domain, const std::vector<HPolyhedron>& sets,
     const CollisionChecker& checker, const ConvexSets& configuration_obstacles,
-    const float configuration_space_margin, const int num_samples,
+    const double configuration_space_margin, const int num_samples,
     const double point_in_set_tol, const Parallelism& parallelism,
     RandomGenerator* generator, Eigen::VectorXd* last_polytope_sample) {
   double fraction_covered = 0.0;
@@ -461,108 +456,6 @@ MakeDefaultMaxCliqueSolver() {
       new planning::graph_algorithms::MaxCliqueSolverViaMip(std::nullopt,
                                                             options));
 }
-
-// Checks a configuration for collision against context obstacles and
-// configuration space obstacles (configuration_space_margin is used as a
-// minimum distance from configuration_obstacles). Returns true if collision 
-// free, false if in collision.
-bool CheckConfigCollisionFreeWithConfigurationObstacles(
-    const Eigen::VectorXd& q, const CollisionChecker& checker,
-    const ConvexSets& configuration_obstacles,
-    const float configuration_space_margin) {
-  // First check if collision-free with obstacles in context
-  if (!checker.CheckConfigCollisionFree(q)) {
-    return false;
-  }
-
-  // Then, check collision with each configuration obstacle
-  for (int obstacle : configuration_obstacles) {
-    if (obstacle.distance_to(q) < configuration_space_margin) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-// Checks an edge between two configuration points for collision against context 
-// obstacles and configuration space obstacles. Returns true if collision free, 
-// false if in collision.
-bool CheckEdgeCollisionFreeWithConfigurationObstacles(
-    const CollisionChecker& checker, const Eigen::VectorXd& q1, 
-    const Eigen::VectorXd& q2, const ConvexSets& configuration_obstacles, 
-    const int thread_num) {
-  const double distance = checker.ComputeConfigurationDistance(q1, q2);
-  const int num_steps = static_cast<int>(std::max(1.0, std::ceil(distance / 
-      checker.edge_step_size())));
-  for (int step = 0; step < num_steps; ++step) {
-    const double ratio =
-        static_cast<double>(step) / static_cast<double>(num_steps);
-    const Eigen::VectorXd qinterp =
-        checker.InterpolateBetweenConfigurations(q1, q2, ratio);
-    if (!checker.CheckConfigCollisionFree(qinterp, thread_num) || 
-        (configuration_obstacles.size() > 0 && 
-        std::any_of(configuration_obstacles.begin(), 
-            configuration_obstacles.end(), 
-            [&](const auto& configuration_obstacle){ 
-              return configuration_obstacle->PointInSet(qinterp);
-            }))) {
-      return false;
-    }
-  }
-  return true;
-}
-
-// Checks a configuration for collision against context obstacles and
-// configuration space obstacles (configuration_space_margin is used as a
-// minimum distance from configuration_obstacles). Returns true if collision 
-// free, false if in collision.
-bool CheckConfigCollisionFreeWithConfigurationObstacles(
-    const Eigen::VectorXd& q, const CollisionChecker& checker,
-    const ConvexSets& configuration_obstacles,
-    const float configuration_space_margin) {
-  // First check if collision-free with obstacles in context
-  if (!checker.CheckConfigCollisionFree(q, context_number)) {
-    return false;
-  }
-
-  // Then, check collision with each configuration obstacle
-  for (int obstacle : configuration_obstacles) {
-    if (obstacle.distance_to(q) < configuration_space_margin) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-// Checks an edge between two configuration points for collision against context 
-// obstacles and configuration space obstacles. Returns true if collision free, 
-// false if in collision.
-bool CheckEdgeCollisionFreeWithConfigurationObstacles(
-    const CollisionChecker& checker, const Eigen::VectorXd& q1, 
-    const Eigen::VectorXd& q2, const ConvexSets* configuration_obstacles) {
-  const double distance = checker.ComputeConfigurationDistance(q1, q2);
-  const int num_steps = static_cast<int>(std::max(1.0, std::ceil(distance / 
-      checker.edge_step_size())));
-  for (int step = 0; step < num_steps; ++step) {
-    const double ratio =
-        static_cast<double>(step) / static_cast<double>(num_steps);
-    const Eigen::VectorXd qinterp =
-        checker.InterpolateBetweenConfigurations(q1, q2, ratio);
-    if (!checker.CheckConfigCollisionFree(model_context, qinterp) || 
-        (configuration_obstacles != nullptr && 
-        std::any_of(iris_options.configuration_obstacles.begin(), 
-            iris_options.configuration_obstacles.end(), 
-            [&](const auto& configuration_obstacle){ 
-              return configuration_obstacle->PointInSet(qinterp);
-            }))) {
-      return false;
-    }
-  }
-  return true;
-}
-
 }  // namespace
 
 void IrisInConfigurationSpaceFromCliqueCover(
@@ -674,40 +567,8 @@ void IrisInConfigurationSpaceFromCliqueCover(
     // Define custom lambda functions for VisibilityGraph's collision checking
     const auto point_check_work = [&](const int thread_num, 
         const int64_t index, std::vector<uint8_t>* points_free) {
-
-      // First, check collision against context obstacles using `checker`
-      bool is_collision_free = checker.CheckConfigCollisionFree(
-          points.col(index), thread_num);
-
-      // If point is collision-free, then check against configuration obstacles
-      if (is_collision_free && 
-          options.iris_options.configuration_obstacles.size() > 0) {
-        for (const auto& obstacle_ptr : 
-            options.iris_options.configuration_obstacles) {
-          const ConvexSet& obstacle = *obstacle_ptr;
-
-          // Calculate distance from point to obstacle
-          std::optional<std::pair<std::vector<double>, Eigen::MatrixXd>> 
-              projection_result = obstacle.Projection(points.col(index));
-
-          double distance_point_to_obstacle = 0;
-          if (projection_result.has_value()) {
-            const std::vector<double>& distances = projection_result->first;
-            distance_point_to_obstacle = distances[0];
-          } else {  // if Projection fails, assume there is a collision
-            is_collision_free = false;
-            break;
-          }
-
-          if (distance_point_to_obstacle < 
-              options.iris_options.configuration_space_margin) {
-            is_collision_free = false;
-            break;
-          }
-        }
-      }
-
-      // Set the value in points_free based on the checks
+      bool is_collision_free = 
+          CheckConfigCollisionFreeWithConfigurationObstacles();
       (*points_free)[index] = static_cast<uint8_t>(is_collision_free);
     };
 
@@ -729,7 +590,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
       }
     };
 
-    Eigen::SparseMatrix<bool> visibility_graph = ConfigurableVisibilityGraph(
+    Eigen::SparseMatrix<bool> visibility_graph = VisibilityGraph(
         point_check_work, edge_check_work, checker, points, 
         max_collision_checker_parallelism);
         

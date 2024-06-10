@@ -38,46 +38,37 @@ Eigen::SparseMatrix<bool> VisibilityGraph(
 
 /** A more flexible variant of the function VisibilityGraph() above. This method 
 also computes the "visibility graph" given a number of sampled points, but 
-accepts addtional lambda function parameters that allow you to define custom 
-methods for collision checking (for example, if you want to check collisions 
-with user-defined configuration obstacles, as the CollisionChecker is only aware
-of context obstacles).
+accepts addtional lambda function parameters that enable custom methods for 
+collision checking (for example, to check collisions with user-defined obstacles
+that are not recognized by a CollisionChecker).
 
-ConfigurableVisibilityGraph will call `point_check_work` once for each point in 
-`points` to determine whether that point is in collision. It takes parameters 
-`const int thread_num`, `const int64_t i`, and 
-`std::vector<uint8_t>* points_free`. `points_free[i]` is passed by pointer and 
-should be modified to contain a binary value 1 if the point is collision-free, 
-or a 0 otherwise. `thread_num` can be used for parallelization (i.e. as a 
-`context_number` for CollisionChecker).
+`point_check_work` is used to determine whether points in `points` are in
+collision. Specifically, it must accept parameters `const int thread_num`, 
+`const int64_t i`, and `std::vector<uint8_t>* points_free` and should set 
+`points_free[i]` to contain a value 1 if `points.col(i)` is collision-free, or 0 
+otherwise. `point_check_work` must be threadsafe with respect to the number of 
+threads `parallelize` defines.
 
-Similarly, ConfigurableVisibilityGraph calls `edge_check_work` once for each
-point in `points_free`. `edge_check_work` takes parameters 
-`const int thread_num`, `const int64_t i`, 
-`const std::vector<uint8_t>& points_free`, `const int num_points`, and 
-`std::vector<std::vector<int>>* edges`. It should check collisions along each 
-edge from `points_free[i]` to `points_free[j]` for all `j` with
-`points_free[j] = 1`, and append the value `j` to `edges[i]` if that edge is
-collision-free. `thread_num` can be used for parallelization (i.e. as a 
-`context_number` for CollisionChecker).
-
-If `parallelize` specifies more than one thread, then the
-CollisionCheckerParams::distance_and_interpolation_provider for `checker` must
-be implemented in C++, either by providing the C++ implementation directly
-directly or by using the default provider.
+`edge_check_work` is used to if edges from a given point are in collision. 
+Specifically, it must accept parameters `const int thread_num`, 
+`const int64_t i`, `const std::vector<uint8_t>& points_free`, 
+`const int num_points`, and `std::vector<std::vector<int>>* edges`, and should
+append the value `j` to `edges[i]` for all `j` with `points_free[j] = 1` where
+the edge from `points_free[i]` to `points_free[j]` is collision-free. 
+`edge_check_work` must be threadsafe with respect to the number of threads 
+`parallelize` defines.
 
 @returns the adjacency matrix, A(i,j) == true iff points.col(i) is visible from
 points.col(j). A is always symmetric.
 
 @pre points.rows() == total number of positions in the collision checker plant.
 */
-Eigen::SparseMatrix<bool> ConfigurableVisibilityGraph(
+Eigen::SparseMatrix<bool> VisibilityGraph(
     std::function<void(const int, const int64_t,  
         std::vector<uint8_t>*)> point_check_work,
     std::function<void(const int, const int64_t,  
         const std::vector<uint8_t>&, const int, 
         std::vector<std::vector<int>>*)> edge_check_work,
-    const CollisionChecker& checker,
     const Eigen::Ref<const Eigen::MatrixXd>& points,
     const Parallelism parallelize);
 
