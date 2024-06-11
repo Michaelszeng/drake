@@ -183,7 +183,7 @@ void ComputeGreedyTruncatedCliqueCover(
 // free, false if in collision.
 bool CheckConfigCollisionFreeWithConfigurationObstacles(
     const Eigen::VectorXd& q, const CollisionChecker& checker, 
-    const ConvexSets& configuration_obstacles,
+    const ConvexSets& configuration_obstacles, const bool check_margin,
     const double configuration_space_margin, const int thread_num) {
   // First check if the configuration is collision-free with the obstacles 
   // defined by the collision checker.
@@ -293,6 +293,7 @@ std::queue<HPolyhedron> IrisWorker(
     if (!collision) {
       log()->info("all clique points out of collision.");
     }
+    // END LOGGING/DEBUGGING
 
     Hyperellipsoid clique_ellipse;
     try {
@@ -308,7 +309,8 @@ std::queue<HPolyhedron> IrisWorker(
 
     if (CheckConfigCollisionFreeWithConfigurationObstacles(
         clique_ellipse.center(), checker, iris_options.configuration_obstacles, 
-        iris_options.configuration_space_margin, builder_id)) {
+        options.sample_with_margin, iris_options.configuration_space_margin, 
+        builder_id)) {
       iris_options.starting_ellipse = clique_ellipse;
       log()->info("clique_ellipse center is NOT in collision.");
     } else {
@@ -348,15 +350,23 @@ std::queue<HPolyhedron> IrisWorker(
       if (iris_options.configuration_obstacles[j]->PointInSet(clique_points.rowwise().mean())) {
         log()->info("average of all clique points is in configuration obstacle.");
       }
-    } 
+    }
+    // END LOGGING/DEBUGGING
 
     checker.UpdatePositions(iris_options.starting_ellipse->center(),
                             builder_id);
     log()->debug("Iris builder thread {} is constructing a set.", builder_id);
-    ret.emplace(IrisInConfigurationSpace(
-        checker.plant(), checker.plant_context(builder_id), iris_options));
-    log()->debug("Iris builder thread {} has constructed a set.", builder_id);
-
+    try {
+      ret.emplace(IrisInConfigurationSpace(
+          checker.plant(), checker.plant_context(builder_id), iris_options));
+      log()->debug("Iris builder thread {} has constructed a set.", builder_id);
+    } catch (const std::runtime_error& e) {
+      log()->info(
+          "IrisInConfigurationSpace failed to build a region. Discarding 
+          clique.", builder_id, e.what())
+    }
+    
+    // Set current_clique for the next IRIS worker to use
     current_clique = computed_cliques->pop();
   }
   log()->debug("Iris builder thread {} has completed.", builder_id);
@@ -411,8 +421,9 @@ double ApproximatelyComputeCoverage(
       *last_polytope_sample =
           domain.UniformSample(generator, *last_polytope_sample);
     } while (!CheckConfigCollisionFreeWithConfigurationObstacles(
-        *last_polytope_sample, checker, configuration_obstacles,
+        *last_polytope_sample, checker, configuration_obstacles, false,
         configuration_space_margin, 0));
+      // Do not check for margin to obstacles when estimating coverage
     sampled_points.col(i) = *last_polytope_sample;
   }
 
@@ -473,14 +484,16 @@ void IrisInConfigurationSpaceFromCliqueCover(
   DRAKE_THROW_UNLESS(
       checker.plant().GetPositionUpperLimits().array().isFinite().all());
 
-  // Set checker padding to prevent clique points (which, in the case where the
-  // clique's inscribed ellipse center is in collision, one of the clique points
-  // is used as the ellipse center) from getting too close to obstacles and
-  // causing iris to throw an error
-  checker.SetPaddingAllRobotEnvironmentPairs(
-      options.iris_options.configuration_space_margin);
-  checker.SetPaddingAllRobotRobotPairs(
-      options.iris_options.configuration_space_margin);
+  if (options.sample_with_margin) {
+    // Set checker padding to prevent clique points (which, in the case where the
+    // clique's inscribed ellipse center is in collision, one of the clique points
+    // is used as the ellipse center) from getting too close to obstacles and
+    // causing iris to throw an error
+    checker.SetPaddingAllRobotEnvironmentPairs(
+        options.iris_options.configuration_space_margin);
+    checker.SetPaddingAllRobotRobotPairs(
+        options.iris_options.configuration_space_margin);
+  }
 
   const HPolyhedron domain = options.iris_options.bounding_region.value_or(
       HPolyhedron::MakeBox(checker.plant().GetPositionLowerLimits(),
@@ -541,6 +554,7 @@ void IrisInConfigurationSpaceFromCliqueCover(
           !CheckConfigCollisionFreeWithConfigurationObstacles(
               last_polytope_sample, checker,
               options.iris_options.configuration_obstacles,
+              options.sample_with_margin, 
               options.iris_options.configuration_space_margin, 0) ||
           // While the last polytope sample is in any of the sets.
           std::any_of(sets->begin(), sets->end(),
@@ -568,7 +582,10 @@ void IrisInConfigurationSpaceFromCliqueCover(
     const auto point_check_work = [&](const int thread_num, 
         const int64_t index, std::vector<uint8_t>* points_free) {
       bool is_collision_free = 
-          CheckConfigCollisionFreeWithConfigurationObstacles();
+          CheckConfigCollisionFreeWithConfigurationObstacles(points.col(i), 
+              checker, options.iris_options.configuration_obstacles,
+              options.sample_with_margin, 
+              options.iris_options.configuration_space_margin, thread_num);
       (*points_free)[index] = static_cast<uint8_t>(is_collision_free);
     };
 

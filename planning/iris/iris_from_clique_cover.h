@@ -85,6 +85,16 @@ struct IrisFromCliqueCoverOptions {
    */
   double point_in_set_tol{1e-6};
 
+  /**
+   * When this option is set to false, the distance from each clique ellipse
+   * center to the nearest obstacle is not verified to be greater than
+   * iris_options.configuration_space_margin, which can cause IRIS to throw an
+   * error and for that clique to be scrapped. However, setting this optoin to 
+   * true requires checking the distance from every sampled point to every
+   * obstacle, increasing computational load. 
+   */
+  bool sample_with_margin{false};
+
   // TODO(AlexandreAmice): Implement a constructor/option that automatically
   // sets up the ILP solver and selects MaxCliqueViaMip
 };
