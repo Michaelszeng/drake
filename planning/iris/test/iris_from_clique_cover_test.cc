@@ -7,6 +7,7 @@
 #include "drake/common/ssize.h"
 #include "drake/common/test_utilities/expect_throws_message.h"
 #include "drake/common/test_utilities/maybe_pause_for_user.h"
+#include "drake/common/text_logging.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/hyperrectangle.h"
 #include "drake/geometry/optimization/vpolytope.h"
@@ -615,10 +616,10 @@ TEST_F(IrisInConfigurationSpaceFromCliqueCoverTestFixture,
     }
     color.normalize();
     VPolytope vregion = VPolytope(sets.at(i)).GetMinimalRepresentation();
-    log()->info("test: {}", fmt_eigen(vregion.vertices()));
+    drake::log()->info("test: {}", fmt_eigen(vregion.vertices()));
     Draw2dVPolytope(vregion, fmt::format("iris_from_clique_cover_greedy{}", i),
                     color, meshcat);
-    log()->info("test2");
+    drake::log()->info("test2");
   }
 
   // Now check the coverage by drawing points from the manual decomposition and
@@ -648,7 +649,7 @@ TEST_F(IrisInConfigurationSpaceFromCliqueCoverTestFixture,
 
   MaybePauseForUser();
 
-  log()->info("{}/download", meshcat->web_url());
+  drake::log()->info("{}/download", meshcat->web_url());
 }
 
 // Test that we get perfect coverage with a configuration obstacle in the top

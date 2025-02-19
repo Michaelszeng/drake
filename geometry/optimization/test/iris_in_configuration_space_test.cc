@@ -46,9 +46,8 @@ HPolyhedron IrisFromUrdf(const std::string urdf,
   auto diagram = builder.Build();
 
   auto context = diagram->CreateDefaultContext();
-  systems::Context<double>& mutable_context = plant.GetMyMutableContextFromRoot(context.get());
   plant.SetPositions(&plant.GetMyMutableContextFromRoot(context.get()), sample);
-  return IrisInConfigurationSpace(plant, plant.GetMyContextFromRoot(*context), &mutable_context,
+  return IrisInConfigurationSpace(plant, plant.GetMyContextFromRoot(*context),
                                   options);
 }
 

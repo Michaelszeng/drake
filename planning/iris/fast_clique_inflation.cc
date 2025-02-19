@@ -7,6 +7,7 @@
 #include <common_robotics_utilities/parallelism.hpp>
 
 #include "drake/common/fmt_eigen.h"
+#include "drake/common/text_logging.h"
 #include "drake/geometry/optimization/convex_set.h"
 #include "drake/geometry/optimization/hpolyhedron.h"
 #include "drake/geometry/optimization/vpolytope.h"
@@ -122,7 +123,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
 
   // cvxh_vpoly = cvxh_vpoly.GetMinimalRepresentation();
 
-  // log()->info("min representation of vpoly done");
+  // drake::log()->info("min representation of vpoly done");
   // copy to vector to allow for parallel checking
   std::vector<Eigen::VectorXd> clique_vec;
   clique_vec.reserve(clique.cols());
@@ -142,12 +143,12 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
 
   // handle corner case where center of ellipsoid is in collision
   if (!checker.CheckConfigCollisionFree(ellipsoid_center)) {
-    log()->info("original ellipsoid center in collision\n{}",
+    drake::log()->info("original ellipsoid center in collision\n{}",
                 fmt_eigen(ellipsoid_center));
     Eigen::Index nearest_point_col;
     (clique - ellipsoid_center).colwise().norm().minCoeff(&nearest_point_col);
     ellipsoid_center = clique.col(nearest_point_col);
-    log()->info("new ellipsoid center is \n{}", fmt_eigen(ellipsoid_center));
+    drake::log()->info("new ellipsoid center is \n{}", fmt_eigen(ellipsoid_center));
   }
 
   // For debugging visualization.
@@ -169,13 +170,13 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
       options.admissible_proportion_in_collision, delta_min, options.tau);
 
   if (options.verbose) {
-    log()->info(
+    drake::log()->info(
         "FastCliqueInflation finding region that is {} collision free with {} "
         "certainty "
         "using {} particles.",
         options.admissible_proportion_in_collision, 1 - options.delta,
         options.num_particles);
-    log()->info("FastCliqueInflation worst case test requires {} samples.",
+    drake::log()->info("FastCliqueInflation worst case test requires {} samples.",
                 N_max);
   }
   Eigen::MatrixXd particles = Eigen::MatrixXd::Zero(dim, N_max);
@@ -240,7 +241,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
       }
     }
     if (options.verbose) {
-      log()->info(
+      drake::log()->info(
           "FastCliqueInflation N_k {}, N_col {}, thresh {}", N_k,
           number_particles_in_collision_unadaptive_test,
           (1 - options.tau) * options.admissible_proportion_in_collision * N_k);
@@ -255,7 +256,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     // warn user if test fails on last iteration
     if (num_iterations_separating_planes ==
         options.max_iterations_separating_planes - 1) {
-      log()->warn(
+      drake::log()->warn(
           "FastCliqueInflation WARNING, separating planes hit max iterations "
           "without "
           "passing the unadaptive test, this voids the probabilistic "
@@ -398,7 +399,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
         Eigen::VectorXd a_face;
         if (dist <= 1e-9) {
           // use ellipsoid, this is likely a collision inside of the convex hull
-          log()->info(
+          drake::log()->info(
               "FastCliqueInflation Warning! Collision inside of "
               "convex hull at \n{}.",
               fmt_eigen(nearest_particle));
@@ -498,7 +499,7 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     // update current polyhedron
     P = HPolyhedron(A.topRows(current_num_faces), b.head(current_num_faces));
     if (max_relaxation > 0) {
-      log()->info(fmt::format(
+      drake::log()->info(fmt::format(
           "FastCliqueInflation Warning relaxing cspace margin by {:03} to "
           "ensure point containment",
           max_relaxation));
@@ -514,13 +515,13 @@ HPolyhedron FastCliqueInflation(const planning::CollisionChecker& checker,
     //                     0.2 * options.max_iterations_separating_planes) ==
     //         0 &&
     if (options.verbose) {
-      log()->info("SeparatingPlanes iteration: {} faces: {}",
+      drake::log()->info("SeparatingPlanes iteration: {} faces: {}",
                   num_iterations_separating_planes, current_num_faces);
     }
   }  // end separating planes step
   auto stop = std::chrono::high_resolution_clock::now();
   if (options.verbose) {
-    log()->info(
+    drake::log()->info(
         "FastCliqueInflation execution time : {} ms",
         std::chrono::duration_cast<std::chrono::milliseconds>(stop - start)
             .count());
